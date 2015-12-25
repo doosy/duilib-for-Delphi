@@ -2,6 +2,8 @@ unit uMain;
 
 interface
 
+{$I DDuilib.inc}
+
 uses
   Windows,
   Messages,
@@ -10,15 +12,13 @@ uses
   Math,
   Dialogs,
   Graphics,
-  pngimage,
   ShellAPI,
-  JSON,
-  Generics.Collections,
   Duilib,
   DuiWindowImplBase,
   DuiListUI,
   DuiRichEdit,
-  DuiConst;
+  pngimage, superobject,
+  DuiConst; //
 
 const
   kclosebtn = 'closebtn';
@@ -53,17 +53,16 @@ const
   WM_TRAYICON_MESSAGE = WM_USER + $128;
 
 type
+  PIconInfo = ^TIconInfo;
   TIconInfo = record
     Text: string;
     IconPath: string;
     AppFileName: string;
-  public
-    constructor Create(AText, AIconPath: string);
   end;
 
   TAppsJSONObject = class
   private
-    FItems: TList<TIconInfo>;
+    FItems: TList;
     function GetCount: Integer;
     function GetItemByIndex(Index: Integer): TIconInfo;
     procedure ParseJSON(const AStr: string);
@@ -75,6 +74,7 @@ type
     function Add(AItem: TIconInfo): Integer;
     procedure Remove(AItem: TIconInfo);
     procedure Delete(AIndex: Integer);
+    procedure Clear;
     procedure LoadFromFile(const AFileName: string);
     procedure LoadFromStream(const AStream: TStream);
     procedure SaveToFile(const AFileName: string);
@@ -84,10 +84,15 @@ type
     property Items[Index: Integer]: TIconInfo read GetItemByIndex write SetItemByIndex;
   end;
 
+  TEventInfo = record
+    Name: string;
+    Event: TNotifyEvent;
+  end;
+
   TAppsWindow = class(TDuiWindowImplBase)
   private
     FDlgBuilder: CDialogBuilder;
-    FEvents: TDictionary<string, TNotifyEvent>;
+    FEvents: array of TEventInfo;
     FApps: TAppsJSONObject;
     FTrayData: TNotifyIconData;
     FIsMouseHover: Boolean;
@@ -98,7 +103,7 @@ type
     FTabStyleDock: CHorizontalLayoutUI;
 
     FOpenDialog: TOpenDialog;
-  
+
     procedure ReInitRadios;
     procedure CreateRadioButton(const AName: string);
     procedure ShowPage(AIndex: Integer);
@@ -133,7 +138,9 @@ type
     procedure DuiWindowInit; // 这个是DoNotify中收到的 windowinit
     procedure DoInitWindow; override;
   public
+{$IFNDEF UseLowVer}
     procedure ShowBalloonTips(ATitle, AInfo: string; ATimeout: Integer = 1000);
+{$ENDIF}
   public
     constructor Create;
     destructor Destroy; override;
@@ -168,7 +175,7 @@ type
     procedure DoNotify(var Msg: TNotifyUI); override;
     procedure DoHandleMessage(var Msg: TMessage; var bHandled: BOOL); override;
   public
-    constructor Create(AParent: HWND; ATitleControl: CControlUI;  AApps: TAppsJSONObject);
+    constructor Create(AParent: HWND; ATitleControl: CControlUI; AApps: TAppsJSONObject);
   end;
 
 
@@ -176,6 +183,8 @@ type
 var
   AppsWindow: TAppsWindow;
 
+function CreateIconInfo(AText, AIconPath: string): TIconInfo;
+function CreateEventInfo(AName: string; const AEvent: TNotifyEvent): TEventInfo;
 
 implementation
 
@@ -191,27 +200,40 @@ UINT WINAPI PrivateExtractIcons(
   _In_      UINT    flags
 );
 }
+
 function PrivateExtractIcons(lpszFile: LPCTSTR; nIconIndex, cxIcon, cyIcon: Integer;
-   var phicon: HICON; var piconid: UINT; nIcons, flags: UINT): UINT; stdcall;
-    external user32 name 'PrivateExtractIconsW';
+  var phicon: HICON; var piconid: UINT; nIcons, flags: UINT): UINT; stdcall;
+  external user32 name 'PrivateExtractIconsW';
 
+function CreateIconInfo(AText, AIconPath: string): TIconInfo;
+begin
+  Result.Text := AText;
+  Result.IconPath := AIconPath;
+  Result.AppFileName := '';
+end;
 
-function GetAppPath: string; inline;
+function CreateEventInfo(AName: string; const AEvent: TNotifyEvent): TEventInfo;
+begin
+  Result.Name := AName;
+  Result.Event := AEvent;
+end;
+
+function GetAppPath: string;
 begin
   Result := ExtractFilePath(ParamStr(0));
 end;
 
-function GetResFullDir: string; inline;
+function GetResFullDir: string;
 begin
   Result := GetAppPath + kResDir;
 end;
 
-function GetIconsPath: string; inline;
+function GetIconsPath: string;
 begin
   Result := GetAppPath + 'Icons\';
 end;
 
-function GetAppsConfigFileName: string; inline;
+function GetAppsConfigFileName: string;
 begin
   Result := GetAppPath + 'Apps.json';
 end;
@@ -229,7 +251,7 @@ end;
 function GetIconRelIconFileName(const AFileName: string): string;
 begin
    // 暂定的目录，测试用
-   Result := '..\..\Icons\' + ExtractFileWithoutExt(AFileName) + '.png';
+  Result := '..\..\Icons\' + ExtractFileWithoutExt(AFileName) + '.png';
 end;
 
 
@@ -239,7 +261,7 @@ constructor TAppsWindow.Create;
 begin
   inherited Create('MainWindow.xml', kResDir);
   FIsMouseHover := True;
-  FEvents := TDictionary<string, TNotifyEvent>.Create;
+  SetLength(FEvents, 0);
   InitEvents;
   FDlgBuilder := CDialogBuilder.CppCreate;
   FApps := TAppsJSONObject.Create;
@@ -256,7 +278,7 @@ begin
   FTrayData.Wnd := Handle;
   FTrayData.uID := FTrayData.Wnd;
   FTrayData.cbSize := Sizeof(TNotifyIconData);
-  FTrayData.uFlags := NIF_MESSAGE or NIF_ICON or NIF_TIP or NIF_INFO;
+  FTrayData.uFlags := NIF_MESSAGE or NIF_ICON or NIF_TIP{$IFNDEF UseLowVer} or NIF_INFO{$ENDIF};
   FTrayData.ucallbackmessage := WM_TRAYICON_MESSAGE;
   FTrayData.hIcon := LoadIcon(HInstance, 'MAINICON');
   StrPLCopy(FTrayData.szTip, '测试托盘显示', Length(FTrayData.szTip) - 1);
@@ -289,7 +311,7 @@ begin
         FTileLayout.RemoveAt(LItemIndex);
       // 如果少于 PAGE_MAX_CHIND 添加一个“添加“按钮
       if (FTileLayout.Count = 0) or ((FTileLayout.Count > 0) and
-         (FTileLayout.LastItem.Name <> 'addappLayout')) then
+        (FTileLayout.LastItem.Name <> 'addappLayout')) then
       begin
         LVerticalLayout := CreateAddItemButton;
         if LVerticalLayout <> nil then
@@ -361,7 +383,7 @@ begin
     begin
       LButton.Tag := LLastIndex;
       LButton.NormalImage := LItem.IconPath;
-      LButton.BkImage :=  LItem.IconPath;
+      LButton.BkImage := LItem.IconPath;
     end;
     LTitle := CLabelUI(PaintManagerUI.FindSubControlByName(LVerticalLayout, kitemtitle));
     if LTitle <> nil then
@@ -379,7 +401,7 @@ procedure TAppsWindow.btnaddappClick(Sender: TObject);
 var
   LItem: TIconInfo;
 begin
-  if FOpenDialog.Execute(Handle) then
+  if FOpenDialog.Execute() then
   begin
     LItem.AppFileName := FOpenDialog.FileName;
     LItem.Text := ExtractFileWithoutExt(LItem.AppFileName);
@@ -400,7 +422,7 @@ begin
   LEdit := CRichEditUI(FindControl(kSearchedt));
   if LEdit <> nil then
   begin
-    if LEdit.Text.Equals(kSearchEditTextHint) or LEdit.Text.IsEmpty then
+    if (LEdit.Text = kSearchEditTextHint) or (LEdit.Text = '') then
       MessageBox(0, '请输入搜索的文字', '', 0)
     else
       MessageBox(0, PChar(LEdit.Text), nil, 0);
@@ -432,6 +454,7 @@ var
   LRadio: COptionUI;
   I: Integer;
   LWidth, LLeft: Integer;
+  szXY: TSize;
 begin
   if FTabStyleDock <> nil then
   begin
@@ -454,7 +477,12 @@ begin
       LLeft := FTabStyleDock.GetWidth div 2 - LWidth div 2;
 
       for I := 0 to FTabStyleDock.GetCount - 1 do
-        FTabStyleDock.GetItemAt(I).SetFixedXY(TSize.Create(LLeft + I * (RadioSize + OffsetSize), 0))
+      begin
+        szXY.cx := LLeft + I * (RadioSize + OffsetSize);
+        szXY.cy := 0;
+        FTabStyleDock.GetItemAt(I).SetFixedXY(szXY);
+      end;
+
     end;
   end;
 end;
@@ -471,29 +499,29 @@ var
 begin
   case Msg.Msg of
     WM_DROPFILES:
-     begin
+      begin
        //TDropStruct
        // 文件拖放
-     end;
+      end;
 
     WM_TRAYICON_MESSAGE:
-     begin
-       case Msg.LParam of
-         WM_LBUTTONDOWN: ;
-         WM_RBUTTONDOWN: TTrayMenu.Create(PaintManagerUI);
-         WM_LBUTTONDBLCLK:;
-       end;
-     end;
+      begin
+        case Msg.LParam of
+          WM_LBUTTONDOWN: ;
+          WM_RBUTTONDOWN: TTrayMenu.Create(PaintManagerUI);
+          WM_LBUTTONDBLCLK: ;
+        end;
+      end;
 
     WM_EXITSIZEMOVE:
       begin
         GetWindowRect(Handle, R);
         if R.Top < 0 then
-          SetWindowPos(Handle, HWND_NOTOPMOST, R.Left, 0, 0, 0,  SWP_NOREDRAW or SWP_NOSIZE)
+          SetWindowPos(Handle, HWND_NOTOPMOST, R.Left, 0, 0, 0, SWP_NOREDRAW or SWP_NOSIZE)
         else if R.Right > ScreenSize.cx then
-          SetWindowPos(Handle, HWND_NOTOPMOST, ScreenSize.cx - R.Width, R.Top, 0, 0,  SWP_NOREDRAW or SWP_NOSIZE)
+          SetWindowPos(Handle, HWND_NOTOPMOST, ScreenSize.cx - (R.Right - R.Left), R.Top, 0, 0, SWP_NOREDRAW or SWP_NOSIZE)
         else if R.Left < 0 then
-          SetWindowPos(Handle, HWND_NOTOPMOST, 0, R.Top, 0, 0,  SWP_NOREDRAW or SWP_NOSIZE);
+          SetWindowPos(Handle, HWND_NOTOPMOST, 0, R.Top, 0, 0, SWP_NOREDRAW or SWP_NOSIZE);
       end;
 
 //    WM_MOUSEMOVE :
@@ -509,35 +537,35 @@ begin
 //      end;
 
     WM_NCMOUSELEAVE: FIsNcMouseEnter := False;
-    WM_MOUSEHOVER, WM_NCMOUSEMOVE :
-     begin
+    WM_MOUSEHOVER, WM_NCMOUSEMOVE:
+      begin
 
-       if Msg.Msg = WM_NCMOUSEMOVE then
-         FIsNcMouseEnter := True;
-       if not FIsMouseHover then
-       begin
-         FIsMouseHover := True;
-         Perform(WM_EXITSIZEMOVE);
-       end;
-     end;
+        if Msg.Msg = WM_NCMOUSEMOVE then
+          FIsNcMouseEnter := True;
+        if not FIsMouseHover then
+        begin
+          FIsMouseHover := True;
+          Perform(WM_EXITSIZEMOVE);
+        end;
+      end;
 
-    WM_MOUSELEAVE :
-     begin
-       if FIsMouseHover and not FIsNcMouseEnter then
-       begin
-         GetWindowRect(Handle, R);
-         if R.Top = 0 then
-           SetWindowPos(Handle, HWND_TOPMOST, R.Left, -(R.Height - 5), 0, 0, SWP_NOREDRAW or SWP_NOSIZE)
-         else if R.Right = ScreenSize.cx then
-           SetWindowPos(Handle, HWND_NOTOPMOST, ScreenSize.cx - 5, R.Top, 0, 0, SWP_NOREDRAW or SWP_NOSIZE)
-         else if R.Left = 0 then
-          SetWindowPos(Handle, HWND_NOTOPMOST, -(R.Width - 5), R.Top, 0, 0,  SWP_NOREDRAW or SWP_NOSIZE);
-         FIsMouseHover := False;
-       end;
-       if FIsNcMouseEnter then
-         FIsNcMouseEnter := False;
-       FMouseTracking := False;
-     end;
+    WM_MOUSELEAVE:
+      begin
+        if FIsMouseHover and not FIsNcMouseEnter then
+        begin
+          GetWindowRect(Handle, R);
+          if R.Top = 0 then
+            SetWindowPos(Handle, HWND_TOPMOST, R.Left, -((R.Bottom - R.Top) - 5), 0, 0, SWP_NOREDRAW or SWP_NOSIZE)
+          else if R.Right = ScreenSize.cx then
+            SetWindowPos(Handle, HWND_NOTOPMOST, ScreenSize.cx - 5, R.Top, 0, 0, SWP_NOREDRAW or SWP_NOSIZE)
+          else if R.Left = 0 then
+            SetWindowPos(Handle, HWND_NOTOPMOST, -((R.Right - R.Left) - 5), R.Top, 0, 0, SWP_NOREDRAW or SWP_NOSIZE);
+          FIsMouseHover := False;
+        end;
+        if FIsNcMouseEnter then
+          FIsNcMouseEnter := False;
+        FMouseTracking := False;
+      end;
   end;
   inherited;
 end;
@@ -550,8 +578,8 @@ begin
   LSize := InitSize;
   LScreenSize := ScreenSize;
   MoveWindow(Handle, LScreenSize.cx - LSize.cx - 5,
-                     LScreenSize.cy div 2 - LSize.cy div 2,
-                     LSize.cx, LSize.cy, False);
+    LScreenSize.cy div 2 - LSize.cy div 2,
+    LSize.cx, LSize.cy, False);
 end;
 
 procedure TAppsWindow.DoNotify(var Msg: TNotifyUI);
@@ -561,105 +589,105 @@ var
   LTitleCtl: CLabelUI;
 begin
   inherited;
-  LType := Msg.sType;
+  LType := Msg.sType{$IFDEF UseLowVer}.m_pstr{$ENDIF};
   LCtlName := Msg.pSender.Name;
-  if LType.Equals(DUI_MSGTYPE_WINDOWINIT) then
+  if LType = DUI_MSGTYPE_WINDOWINIT then
     DuiWindowInit
   else
-  if LType.Equals(DUI_MSGTYPE_CLICK) then
-  begin
-    if LCtlName.Contains('TabDotButton_') then
+    if LType = DUI_MSGTYPE_CLICK then
     begin
-      if not COptionUI(Msg.pSender).IsSelected then
+      if Pos('TabDotButton_', LCtlName) <> 0 then
       begin
-        FSelectedRadioIndex := Msg.pSender.Tag;
-        ShowPage(FSelectedRadioIndex);
-      end;
-    end else ProcesNotifyEvent(Msg.pSender);
-  end else
-  if LType.Equals(DUI_MSGTYPE_KILLFOCUS) then
-  begin
-    if LCtlName.Equals(kSearchedt) then
-    begin
-      LEdit := CRichEditUI(Msg.pSender);
-      if LEdit <> nil then
-      begin
-        if LEdit.Text = '' then
+        if not COptionUI(Msg.pSender).IsSelected then
         begin
-          LEdit.Text := kSearchEditTextHint;
-          LEdit.TextColor := $FF94AAB5;
+          FSelectedRadioIndex := Msg.pSender.Tag;
+          ShowPage(FSelectedRadioIndex);
         end;
-      end;
-    end;
-  end else
-  if LType.Equals(DUI_MSGTYPE_SETFOCUS) then
-  begin
-    if LCtlName.Equals(kSearchedt) then
-    begin
-      LEdit := CRichEditUI(Msg.pSender);
-      if LEdit <> nil then
-      begin
-        if LEdit.Text = kSearchEditTextHint then
-        begin
-          LEdit.Text := '';
-          LEdit.TextColor := $FFFFFFFF;
-        end;
-      end;
-    end;
-  end else
-  if LType.Equals(DUI_MSGTYPE_DROPDOWN) then
-  begin
-    MessageBox(0, 'dropdown', 'drop', 0);
-  end else
-  if LType.Equals(DUI_MSGTYPE_MENU) then
-  begin
-    if LCtlName.Equals(kSearchedt) then
-      TRichEditMenu.Create(PaintManagerUI)
-    else if LCtlName.Equals(kbtnopenapp) then
-    begin
-      LTitleCtl := CLabelUI(PaintManagerUI.FindSubControlByName(FTileLayout.GetItemAt(Msg.pSender.Tag), 'title'));
-      LTitleCtl.Tag := Msg.pSender.Tag;
-      TButtonItemMenu.Create(LTitleCtl, PaintManagerUI);
-    end;
-  end else
-  if LType.Equals(kRichMenuItemClick) then
-  begin
-    LEdit := CRichEditUI(FindControl(kSearchedt));
-    if LEdit <> nil then
-    begin
-      if LCtlName.Equals('menu_copy') then
-        LEdit.Copy
-      else if LCtlName.Equals('menu_cut') then
-        LEdit.Cut
-      else if LCtlName.Equals('menu_paste') then
-        LEdit.Paste
-      else if LCtlName.Equals('menu_selall') then
-        LEdit.SetSelAll;
-    end;
-  end else
-  if LType.Equals(kTrayMenuItemClick) then
-  begin
-    if LCtlName.Equals('menu_exit') then
-      DuiApplication.Terminate;
-  end else
-  if LType.Equals(kButtonMenuItemClick) then
-  begin
-    if LCtlName.Equals('menu_open') then
-      OpenAppByItemIndex(CLabelUI(Pointer(Msg.pSender.Tag)).Tag)
-    else if LCtlName.Equals('menu_modify') then
-    begin
-      with TModifyInfoWindow.Create(Handle, CControlUI(Pointer(Msg.pSender.Tag)), FApps) do
-      begin
-        CenterWindow;
-        ShowModal;
-        Free;
-      end;
+      end else ProcesNotifyEvent(Msg.pSender);
     end else
-    if LCtlName.Equals('menu_delete') then
-    begin
-      DeleteAppByItemIndex(CLabelUI(Pointer(Msg.pSender.Tag)).Tag);
-    end;
-  end;
+      if LType = DUI_MSGTYPE_KILLFOCUS then
+      begin
+        if LCtlName = kSearchedt then
+        begin
+          LEdit := CRichEditUI(Msg.pSender);
+          if LEdit <> nil then
+          begin
+            if LEdit.Text = '' then
+            begin
+              LEdit.Text := kSearchEditTextHint;
+              LEdit.TextColor := $FF94AAB5;
+            end;
+          end;
+        end;
+      end else
+        if LType = DUI_MSGTYPE_SETFOCUS then
+        begin
+          if LCtlName = kSearchedt then
+          begin
+            LEdit := CRichEditUI(Msg.pSender);
+            if LEdit <> nil then
+            begin
+              if LEdit.Text = kSearchEditTextHint then
+              begin
+                LEdit.Text := '';
+                LEdit.TextColor := $FFFFFFFF;
+              end;
+            end;
+          end;
+        end else
+          if LType = DUI_MSGTYPE_DROPDOWN then
+          begin
+            MessageBox(0, 'dropdown', 'drop', 0);
+          end else
+            if LType = DUI_MSGTYPE_MENU then
+            begin
+              if LCtlName = kSearchedt then
+                TRichEditMenu.Create(PaintManagerUI)
+              else if LCtlName = kbtnopenapp then
+              begin
+                LTitleCtl := CLabelUI(PaintManagerUI.FindSubControlByName(FTileLayout.GetItemAt(Msg.pSender.Tag), 'title'));
+                LTitleCtl.Tag := Msg.pSender.Tag;
+                TButtonItemMenu.Create(LTitleCtl, PaintManagerUI);
+              end;
+            end else
+              if LType = kRichMenuItemClick then
+              begin
+                LEdit := CRichEditUI(FindControl(kSearchedt));
+                if LEdit <> nil then
+                begin
+                  if LCtlName = 'menu_copy' then
+                    LEdit.Copy
+                  else if LCtlName = 'menu_cut' then
+                    LEdit.Cut
+                  else if LCtlName = 'menu_paste' then
+                    LEdit.Paste
+                  else if LCtlName = 'menu_selall' then
+                    LEdit.SetSelAll;
+                end;
+              end else
+                if LType = kTrayMenuItemClick then
+                begin
+                  if LCtlName = 'menu_exit' then
+                    DuiApplication.Terminate;
+                end else
+                  if LType = kButtonMenuItemClick then
+                  begin
+                    if LCtlName = 'menu_open' then
+                      OpenAppByItemIndex(CLabelUI(Pointer(Msg.pSender.Tag)).Tag)
+                    else if LCtlName = 'menu_modify' then
+                    begin
+                      with TModifyInfoWindow.Create(Handle, CControlUI(Pointer(Msg.pSender.Tag)), FApps) do
+                      begin
+                        CenterWindow;
+                        ShowModal;
+                        Free;
+                      end;
+                    end else
+                      if LCtlName = 'menu_delete' then
+                      begin
+                        DeleteAppByItemIndex(CLabelUI(Pointer(Msg.pSender.Tag)).Tag);
+                      end;
+                  end;
 end;
 
 procedure TAppsWindow.DuiWindowInit;
@@ -677,8 +705,7 @@ var
   LIconId: UINT;
   LSaveIcon: TIcon;
   LBmp: TBitmap;
-  LPng: TPngImage;
-
+  LPng: {$IFDEF UseLowVer}TPNGObject{$ELSE}TPngImage{$ENDIF};
 begin
   Result := '';
   if PrivateExtractIcons(PChar(AFileName), 0, 48, 48, LIcon, LIconId, 1, LR_LOADFROMFILE) <> 0 then
@@ -692,10 +719,11 @@ begin
         // 关于透明问题以后再去解决
 //        LSaveIcon.SaveToFile(GetSaveAbsIconFileName(AFileName).Replace('.png', '.ico'));
 //        LBmp.Assign(LSaveIcon);
-        LBmp.SetSize(LSaveIcon.Width, LSaveIcon.Height);
+        LBmp.Width := LSaveIcon.Width;
+        LBmp.Height := LSaveIcon.Height;
 //        LBmp.Transparent := True;
         LBmp.Canvas.Draw(0, 0, LSaveIcon);
-        LPng := TPngImage.Create;
+        LPng := {$IFDEF UseLowVer}TPNGObject{$ELSE}TPngImage{$ENDIF}.Create;
         try
           LPng.Assign(LBmp);
           LPng.SaveToFile(GetSaveAbsIconFileName(AFileName));
@@ -733,15 +761,16 @@ end;
 
 procedure TAppsWindow.InitEvents;
 begin
-  FEvents.Add('openmycomputer', openmycomputer);
-  FEvents.Add('openbrowser', openbrowser);
-  FEvents.Add('openyule', openyule);
-  FEvents.Add('openappmarket', openappmarket);
-  FEvents.Add(kbtnSearch, btnSearchClick);
-  FEvents.Add(kclosebtn, closebtnClick);
-  FEvents.Add(kminbtn, minbtnClick);
-  FEvents.Add(kbtnopenapp, btnopenappClick);
-  FEvents.Add(kbtnaddapp, btnaddappClick);
+  SetLength(FEvents, 9);
+  FEvents[0] := CreateEventInfo('openmycomputer', openmycomputer);
+  FEvents[1] := CreateEventInfo('openbrowser', openbrowser);
+  FEvents[2] := CreateEventInfo('openyule', openyule);
+  FEvents[3] := CreateEventInfo('openappmarket', openappmarket);
+  FEvents[4] := CreateEventInfo(kbtnSearch, btnSearchClick);
+  FEvents[5] := CreateEventInfo(kclosebtn, closebtnClick);
+  FEvents[6] := CreateEventInfo(kminbtn, minbtnClick);
+  FEvents[7] := CreateEventInfo(kbtnopenapp, btnopenappClick);
+  FEvents[8] := CreateEventInfo(kbtnaddapp, btnaddappClick);
 end;
 
 procedure TAppsWindow.InitRadios;
@@ -752,7 +781,7 @@ begin
   LMaxPage := GetListMaxPage;
   // 创建对应的TabDot样式按钮
   for I := 0 to IfThen(FApps.Count mod PAGE_MAX_CHIND = 0, LMaxPage + 1, LMaxPage) - 1 do
-     CreateRadioButton(Format('TabDotButton_%d', [I]));
+    CreateRadioButton(Format('TabDotButton_%d', [I]));
   SelectRadioItem(FSelectedRadioIndex);
 end;
 
@@ -790,10 +819,16 @@ end;
 
 procedure TAppsWindow.ProcesNotifyEvent(Sender: TObject);
 var
-  LEvent: TNotifyEvent;
+  i: Integer;
 begin
-  if FEvents.TryGetValue(CControlUI(Sender).Name, LEvent) then
-    LEvent(Sender);
+  for i := Low(FEvents) to High(FEvents) do
+  begin
+    if SameText(CControlUI(Sender).Name, FEvents[i].Name) then
+    begin
+      FEvents[i].Event(Sender);
+      Break;
+    end;
+  end;
 end;
 
 procedure TAppsWindow.ReInitRadios;
@@ -818,6 +853,8 @@ begin
   end;
 end;
 
+{$IFNDEF UseLowVer}
+
 procedure TAppsWindow.ShowBalloonTips(ATitle, AInfo: string; ATimeout: Integer);
 begin
   FTrayData.uTimeout := ATimeout;
@@ -826,6 +863,7 @@ begin
   StrPLCopy(FTrayData.szInfo, AInfo, Length(FTrayData.szInfo) - 1);
   Shell_NotifyIcon(NIM_MODIFY, @FTrayData);
 end;
+{$ENDIF}
 
 procedure TAppsWindow.ShowPage(AIndex: Integer);
 var
@@ -860,7 +898,7 @@ begin
       begin
         LButton.Tag := I;
         LButton.NormalImage := LItem.IconPath;
-        LButton.BkImage :=  LItem.IconPath;
+        LButton.BkImage := LItem.IconPath;
       end;
       LTitle := CLabelUI(PaintManagerUI.FindSubControlByName(LVerticalLayout, kitemtitle));
       if LTitle <> nil then
@@ -875,15 +913,6 @@ begin
         FTileLayout.Add(LVerticalLayout);
     end;
   end;
-end;
-
-{ TIconInfo }
-
-constructor TIconInfo.Create(AText, AIconPath: string);
-begin
-  Self.Text := AText;
-  Self.IconPath := AIconPath;
-  Self.AppFileName := '';
 end;
 
 
@@ -913,16 +942,20 @@ begin
 end;
 
 procedure TButtonItemMenu.DoNotify(var Msg: TNotifyUI);
+var
+  sType: string;
 begin
   // 重写这个方法，以便自定义，不要继续的
-  if Msg.sType = DUI_MSGTYPE_ITEMSELECT then
+  sType := Msg.sType{$IFDEF UseLowVer}.m_pstr{$ENDIF};
+  if sType = DUI_MSGTYPE_ITEMSELECT then
     Close
-  else if Msg.sType = DUI_MSGTYPE_ITEMCLICK then
-  begin
+  else
+    if sType = DUI_MSGTYPE_ITEMCLICK then
+    begin
     // 将打开的索引再进一步传递回去
-    Msg.pSender.Tag := UIntPtr(FTitleControl);
-    FParentPaintManager.SendNotify(Msg.pSender, FMsg);
-  end;
+      Msg.pSender.Tag := UIntPtr(FTitleControl);
+      FParentPaintManager.SendNotify(Msg.pSender, FMsg);
+    end;
 end;
 
 { TAppsJSONObject }
@@ -930,23 +963,32 @@ end;
 constructor TAppsJSONObject.Create;
 begin
   inherited Create;
-  FItems := TList<TIconInfo>.Create;
+  FItems := TList.Create;
 end;
 
 destructor TAppsJSONObject.Destroy;
 begin
+  Clear;
   FItems.Free;
   inherited;
 end;
 
 procedure TAppsJSONObject.Delete(AIndex: Integer);
+var
+  LItem: PIconInfo;
 begin
-  FItems.Delete(AIndex);;
+  LItem := PIconInfo(FItems[AIndex]);
+  Dispose(LItem);
+  FItems.Delete(AIndex);
 end;
 
 function TAppsJSONObject.Add(AItem: TIconInfo): Integer;
+var
+  LItem: PIconInfo;
 begin
-  Result := FItems.Add(AItem);
+  New(LItem);
+  LItem^ := AItem;
+  Result := FItems.Add(LItem);
 end;
 
 function TAppsJSONObject.GetCount: Integer;
@@ -956,7 +998,7 @@ end;
 
 function TAppsJSONObject.GetItemByIndex(Index: Integer): TIconInfo;
 begin
-  Result := FItems[Index];
+  Result := PIconInfo(FItems[Index])^;
 end;
 
 procedure TAppsJSONObject.LoadFromFile(const AFileName: string);
@@ -975,9 +1017,9 @@ procedure TAppsJSONObject.LoadFromStream(const AStream: TStream);
 var
   LStrStream: TStringStream;
 begin
-  LStrStream := TStringStream.Create('', TEncoding.UTF8);
+  LStrStream := TStringStream.Create('');
   try
-    LStrStream.LoadFromStream(AStream);
+    LStrStream.CopyFrom(AStream, AStream.Size);
     ParseJSON(LStrStream.DataString);
   finally
     LStrStream.Free;
@@ -986,34 +1028,42 @@ end;
 
 procedure TAppsJSONObject.ParseJSON(const AStr: string);
 var
-  LJV: TJSONValue;
-  LJA: TJSONArray;
+  LJV: ISuperObject;
+  LJA: TSuperArray;
   I: Integer;
   LItem: TIconInfo;
 begin
-  LJV := TJSONObject.ParseJSONValue(AStr);
+  LJV := SO(AStr);
   if Assigned(LJV) then
   begin
-    try
-      if LJV.TryGetValue<TJSONArray>(LJA) then
+    LJA := LJV.AsArray;
+    if LJA <> nil then
+    begin
+      for I := 0 to LJA.Length - 1 do
       begin
-        for I := 0 to LJA.Count - 1 do
-        begin
-          LJA.Items[I].TryGetValue<string>('text', LItem.Text);
-          LJA.Items[I].TryGetValue<string>('iconpath', LItem.IconPath);
-          LJA.Items[I].TryGetValue<string>('appfilename', LItem.AppFileName);
-          FItems.Add(LItem);
-        end;
+        LItem.Text := LJA[I].S['text'];
+        LItem.IconPath := LJA[I].S['iconpath'];
+        LItem.AppFileName := LJA[I].S['appfilename'];
+        Add(LItem);
       end;
-    finally
-      LJV.Free;
     end;
   end;
 end;
 
 procedure TAppsJSONObject.Remove(AItem: TIconInfo);
+var
+  i: Integer;
+  LItem: PIconInfo;
 begin
-  FItems.Remove(AItem);
+  for i := 0 to FItems.Count - 1 do
+  begin
+    LItem := FItems[i];
+    if (LItem.Text = AItem.Text) and (LItem.IconPath = AItem.IconPath) and (LItem.AppFileName = AItem.AppFileName) then
+    begin
+      Delete(i);
+      Break;
+    end;
+  end;
 end;
 
 procedure TAppsJSONObject.SaveToFile(const AFileName: string);
@@ -1033,28 +1083,25 @@ var
   I: Integer;
   LItem: TIconInfo;
   LData: TStringStream;
-  LJA: TJSONArray;
-  LJO: TJSONObject;
+  LJA: ISuperObject;
+  LJO: ISuperObject;
 begin
-  LData := TStringStream.Create('', TEncoding.UTF8);
+  LData := TStringStream.Create('');
   try
-    LJA := TJSONArray.Create;
-    try
-      for I := 0 to FItems.Count - 1 do
-      begin
-        LItem := FItems[I];
-        LJO := TJSONObject.Create;
-        // .Replace('\', '\\')　要这样，TJSONString竟然不起作用了？　
-        LJO.AddPair('text', TJSONString.Create(LItem.Text.Replace('\', '\\')));
-        LJO.AddPair('iconpath', TJSONString.Create(LItem.IconPath.Replace('\', '\\')));
-        LJO.AddPair('appfilename', TJSONString.Create(LItem.AppFileName.Replace('\', '\\')));
-        LJA.Add(LJO);
-      end;
-      LData.WriteString(LJA.ToString);
-    finally
-      LJA.Free;
+    LJA := SO('[]');
+    for I := 0 to FItems.Count - 1 do
+    begin
+      LItem := GetItemByIndex(I);
+      LJO := SO();
+      LJO.S['text'] := LItem.Text;
+      LJO.S['iconpath'] := LItem.IconPath;
+      LJO.S['appfilename'] := LItem.AppFileName;
+      LJA.AsArray.Add(LJO);
     end;
-    LData.SaveToStream(AStream);
+    LData.WriteString(LJA.AsString);
+
+    LData.Position := 0;
+    AStream.CopyFrom(LData, LData.Size);
   finally
     LData.Free;
   end;
@@ -1063,7 +1110,17 @@ end;
 procedure TAppsJSONObject.SetItemByIndex(Index: Integer;
   const Value: TIconInfo);
 begin
-  FItems[Index] := Value;
+  PIconInfo(FItems[Index])^ := Value;
+end;
+
+procedure TAppsJSONObject.Clear;
+var
+  i: Integer;
+begin
+  for i := FItems.Count - 1 downto 0 do
+  begin
+    Delete(i);
+  end;
 end;
 
 { TModifyInfoWindow }
@@ -1101,9 +1158,11 @@ procedure TModifyInfoWindow.DoNotify(var Msg: TNotifyUI);
 var
   LblTitle: CLabelUI;
   LItem: TIconInfo;
+  sType: string;
 begin
   inherited;
-  if Msg.sType = DUI_MSGTYPE_CLICK then
+  sType := Msg.sType{$IFDEF UseLowVer}.m_pstr{$ENDIF};
+  if sType = DUI_MSGTYPE_CLICK then
   begin
     if Msg.pSender.Name = kclosebtn then
       Close
@@ -1130,3 +1189,4 @@ end;
 
 
 end.
+
