@@ -11,13 +11,10 @@ uses
   Classes,
   Math,
   Dialogs,
-  Graphics,
-  pngimage,
   ShellAPI,
   superobject,
   Duilib,
   DuiWindowImplBase,
-  DuiListUI,
   DuiRichEdit,
   DuiConst;
 
@@ -37,6 +34,8 @@ const
   kbtnSearch = 'btn_Search';
   kbtnopenapp = 'btnopenapp';
 
+  kskinbtn = 'skinbtn';
+
   kSearchEditTextHint = '搜索应用';
 
   kRichMenuItemClick = 'RichMenuItemClick';
@@ -47,7 +46,7 @@ const
 
 
   /// <summary>
-  ///   4行，5列 (LTileLayout.GetWidth div 80 * (LTitleLayout.GetHeight div 80)
+  ///   5行，4列 (LTileLayout.GetWidth div 80 * (LTitleLayout.GetHeight div 80)
   /// </summary>
   PAGE_MAX_CHIND = 20;
 
@@ -179,6 +178,14 @@ type
     constructor Create(AParent: HWND; ATitleControl: CControlUI;  AApps: TAppsJSONObject);
   end;
 
+  TSkinWindow = class(TDuiWindowImplBase)
+  protected
+    procedure DoInitWindow; override;
+    procedure DoNotify(var Msg: TNotifyUI); override;
+    procedure DoHandleMessage(var Msg: TMessage; var bHandled: BOOL); override;
+  public
+    constructor Create;
+  end;
 
 
 var
@@ -201,6 +208,11 @@ UINT WINAPI PrivateExtractIcons(
   _In_      UINT    flags
 );
 }
+
+uses 
+  uIconToPng;
+
+
 function PrivateExtractIcons(lpszFile: LPCTSTR; nIconIndex, cxIcon, cyIcon: Integer;
    var phicon: HICON; var piconid: UINT; nIcons, flags: UINT): UINT; stdcall;
     external user32 name 'PrivateExtractIconsW';
@@ -260,6 +272,9 @@ end;
 constructor TAppsWindow.Create;
 begin
   inherited Create('MainWindow.xml', kResDir);
+  // 翻看duilib才发现这个函数控制
+  // 如果tooltip出现了，则这个就失效了，貌似有点坑
+  PaintManagerUI.SetHoverTime(30);
   FIsMouseHover := True;
   SetLength(FEvents, 0);
   InitEvents;
@@ -524,22 +539,9 @@ begin
           SetWindowPos(Handle, HWND_NOTOPMOST, 0, R.Top, 0, 0,  SWP_NOREDRAW or SWP_NOSIZE);
       end;
 
-//    WM_MOUSEMOVE :
-//      begin
-//        if not FMouseTracking then
-//        begin
-//          LTrackMouse.cbSize := Sizeof(TTrackMouseEvent);
-//          LTrackMouse.hwndTrack := Handle;
-//          LTrackMouse.dwFlags := TME_LEAVE or TME_HOVER;
-//          LTrackMouse.dwHoverTime := 1;
-//          FMouseTracking := TrackMouseEvent(LTrackMouse);
-//        end;
-//      end;
-
     WM_NCMOUSELEAVE: FIsNcMouseEnter := False;
     WM_MOUSEHOVER, WM_NCMOUSEMOVE :
      begin
-
        if Msg.Msg = WM_NCMOUSEMOVE then
          FIsNcMouseEnter := True;
        if not FIsMouseHover then
@@ -603,7 +605,12 @@ begin
         FSelectedRadioIndex := Msg.pSender.Tag;
         ShowPage(FSelectedRadioIndex);
       end;
-    end else ProcesNotifyEvent(Msg.pSender);
+    end else
+    if LCtlName = kskinbtn then
+    begin
+      TSkinWindow.Create;
+    end else
+     ProcesNotifyEvent(Msg.pSender);
   end else
   if LType = DUI_MSGTYPE_KILLFOCUS then
   begin
@@ -703,41 +710,13 @@ function TAppsWindow.ExtractFileIconToPngAndReturnNewPath(
 var
   LIcon: HICON;
   LIconId: UINT;
-  LSaveIcon: TIcon;
-  LBmp: TBitmap;
-  LPng: {$IFDEF UseLowVer}TPNGObject{$ELSE}TPngImage{$ENDIF};
 begin
   Result := '';
   if PrivateExtractIcons(PChar(AFileName), 0, 48, 48, LIcon, LIconId, 1, LR_LOADFROMFILE) <> 0 then
   begin
-    LSaveIcon := TIcon.Create;
-    try
-      LSaveIcon.Handle := LIcon;
-      LSaveIcon.Transparent := True;
-      LBmp := TBitmap.Create;
-      try
-        // 关于透明问题以后再去解决
-//        LSaveIcon.SaveToFile(GetSaveAbsIconFileName(AFileName).Replace('.png', '.ico'));
-//        LBmp.Assign(LSaveIcon);
-        LBmp.Width := LSaveIcon.Width;
-        LBmp.Height := LSaveIcon.Height;
-//        LBmp.Transparent := True;
-        LBmp.Canvas.Draw(0, 0, LSaveIcon);
-        LPng := {$IFDEF UseLowVer}TPNGObject{$ELSE}TPngImage{$ENDIF}.Create;
-        try
-          LPng.Assign(LBmp);
-          LPng.SaveToFile(GetSaveAbsIconFileName(AFileName));
-          Result := GetIconRelIconFileName(AFileName);
-        finally
-          LPng.Free;
-        end;
-      finally
-        LBmp.Free;
-      end;
-    finally
-      LSaveIcon.Free;
-      DestroyIcon(LIcon);
-    end;
+    ConvertIconToPng(LIcon, GetSaveAbsIconFileName(AFileName));
+    Result := GetIconRelIconFileName(AFileName);
+    DestroyIcon(LIcon);
   end;
 end;
 
@@ -1041,8 +1020,8 @@ begin
       for I := 0 to LJA.Length - 1 do
       begin
         LItem.Text := LJA[I].S['text'];
-        LItem.Text := LJA[I].S['iconpath'];
-        LItem.Text := LJA[I].S['appfilename'];
+        LItem.IconPath := LJA[I].S['iconpath'];
+        LItem.AppFileName := LJA[I].S['appfilename'];
         Add(LItem);
       end;
     end;
@@ -1160,7 +1139,7 @@ var
   sType: string;
 begin
   inherited;
-  sType :=  Msg.sType{$IFDEF UseLowVer}.m_pstr{$ENDIF};
+  sType :=  Msg.sType.m_pstr;
   if sType = DUI_MSGTYPE_CLICK then
   begin
     if Msg.pSender.Name = kclosebtn then
@@ -1187,4 +1166,39 @@ end;
 
 
 
+{ TSkinWindow }
+
+constructor TSkinWindow.Create;
+begin
+  inherited Create('skinwindow.xml', kResDir);
+  CreateWindow(0, '更换皮肤', WS_POPUP, WS_EX_TOOLWINDOW or WS_EX_TOPMOST);
+  CenterWindow;
+  Show;
+end;
+
+procedure TSkinWindow.DoHandleMessage(var Msg: TMessage; var bHandled: BOOL);
+begin
+  inherited;
+  if Msg.Msg = WM_KILLFOCUS then
+  begin
+    Close;
+    Msg.Result := 1;
+  end;
+end;
+
+procedure TSkinWindow.DoInitWindow;
+begin
+  inherited;
+
+end;
+
+
+procedure TSkinWindow.DoNotify(var Msg: TNotifyUI);
+begin
+  inherited;
+
+end;
+
 end.
+
+
