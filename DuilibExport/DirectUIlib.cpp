@@ -17,6 +17,63 @@ using namespace DuiLib;
 #pragma warning(disable:4190)
 
 
+class CNativeControlUI : public CControlUI
+{
+private:
+	void UpdateWindowParent(HWND hWd) {
+		if (hWd != NULL && ::IsWindow(hWd)) {
+			HWND hParent = this->GetManager()->GetPaintWindow();
+			if (::GetParent(hWd) != hParent){}
+				::SetParent(hWd, hParent);
+		}
+	}
+public:
+	CNativeControlUI(HWND hWnd) :
+		m_hWnd(hWnd){
+		UpdateWindowParent(hWnd);
+	}
+	void SetInternVisible(bool bVisible = true) {
+		CControlUI::SetInternVisible(bVisible);
+		if (m_hWnd)
+			::ShowWindow(m_hWnd, bVisible ? SW_SHOWNOACTIVATE : SW_HIDE);
+	}
+	void SetVisible(bool bVisible = true) {
+		CControlUI::SetVisible(bVisible);
+		if (m_hWnd)
+			::ShowWindow(m_hWnd, bVisible ? SW_SHOWNOACTIVATE : SW_HIDE);
+	}
+	void SetPos(RECT rc, bool bNeedInvalidate) {
+		CControlUI::SetPos(rc, bNeedInvalidate);
+		if (m_hWnd)
+			::SetWindowPos(m_hWnd, HWND_TOP, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, SWP_NOZORDER | SWP_NOACTIVATE);
+	}
+	LPCTSTR GetClass() const {
+		return _T("NativeControlUI");
+	}
+	CDuiString GetText() const {
+		if (m_hWnd) {
+			CHAR text[MAX_PATH] = { 0 };
+#ifdef UNICODE
+			::GetWindowText(m_hWnd, (LPWSTR)text, MAX_PATH);
+#else
+			::GetWindowText(m_hWnd, (LPSTR)text, MAX_PATH);
+#endif
+			return (LPCTSTR)text;
+		}
+		return _T("");
+	}
+	void SetText(LPCTSTR pstrText){
+		if (m_hWnd)
+			::SetWindowText(m_hWnd, pstrText);
+	}
+	void SetNativeHandle(HWND hWd) {
+		UpdateWindowParent(hWd);
+		m_hWnd = hWd;
+	};
+protected:
+	HWND m_hWnd;
+};
+
 
 typedef LRESULT(*HandleMessageCallBack)(LPVOID, UINT, WPARAM, LPARAM, BOOL&);
 typedef void(*NotifyCallBack)(LPVOID, TNotifyUI&);
@@ -27,6 +84,7 @@ typedef CControlUI*(*CreateControlCallBack)(LPVOID, LPCTSTR);
 typedef LPCTSTR(*GetItemTextCallBack)(LPVOID, CControlUI*, int, int);
 typedef LRESULT(*ResponseDefaultKeyEventCallBack)(LPVOID, WPARAM);
 
+ 
 class CDelphi_WindowImplBase : // 好吧，你赢了,我认输
 	                           public IListCallbackUI, //这个貌似只能放第一个，他取的时候就是取第一个的，要不就另行建立一个类
 							   public WindowImplBase
@@ -101,6 +159,10 @@ public:
 	}
 
 	CControlUI* CreateControl(LPCTSTR pstrClass) {
+		// 直接创建
+		if (_tcsicmp(pstrClass, _T("NativeControl")) == 0)
+			return new CNativeControlUI(NULL);
+
 		if (m_CreateControl)
 			return	m_CreateControl(m_Self, pstrClass);
 		return NULL;
@@ -114,7 +176,11 @@ public:
 	LPCTSTR GetWindowClassName() const { return m_ClassName; }
 	CDuiString GetSkinFile() { return m_SkinFile; };
 	CDuiString GetSkinFolder() { return m_SkinFolder; };
-	CDuiString GetZIPFileName() const { return m_ZipFileName; };
+	CDuiString GetZIPFileName() const {
+		if (_tcsicmp(m_ZipFileName, _T("")) == 0)
+			return CPaintManagerUI::GetResourceZip();
+		return m_ZipFileName; 
+	};
 	UILIB_RESOURCETYPE GetResourceType() const { return m_RType; };
 	UINT GetClassStyle() const { return m_GetClassStyle; };
 	LRESULT MessageHandler(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
@@ -216,48 +282,7 @@ public:
 };
 
 
-class CNativeControlUI: public CControlUI
-{
-   public: 	 
-	  CNativeControlUI(HWND hWnd):
-		   m_hWnd(hWnd){}
 
-      void SetInternVisible(bool bVisible = true) {
-           CControlUI::SetInternVisible(bVisible);
-		   if (m_hWnd)
-		       ::ShowWindow(m_hWnd, bVisible);
-      }
-	  
-	  void SetPos(RECT rc, bool bNeedInvalidate) {
-           CControlUI::SetPos(rc, bNeedInvalidate);
-		   if (m_hWnd)
-		       ::SetWindowPos(m_hWnd, HWND_TOP, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, SWP_NOZORDER | SWP_NOACTIVATE);
-      }
-   
-	  LPCTSTR GetClass() const {
-	     return _T("NativeControlUI");
-	  }
-
-	  CDuiString GetText() const {
-		  if (m_hWnd) {
-			    CHAR text[MAX_PATH] = { 0 };
-			    #ifdef UNICODE
-					::GetWindowText(m_hWnd, (LPWSTR)text, MAX_PATH);
-			    #else
-					::GetWindowText(m_hWnd, (LPSTR)text, MAX_PATH);
-				#endif
-			  return (LPCTSTR)text;
-		  }
-		  return _T("");
-	  }
-	  void SetText(LPCTSTR pstrText){
-		  if (m_hWnd)
-		      ::SetWindowText(m_hWnd, pstrText);
-	  }
-	  void SetNativeHandle(HWND hWd) { m_hWnd = hWd; };
-   protected:
-      HWND m_hWnd;
-};
 
 /*
 typedef void(*SetInternVisibleCallback)(LPVOID, bool);
@@ -668,6 +693,10 @@ DIRECTUILIB_API UINT Delphi_ControlUI_GetControlFlags(CControlUI* handle) {
     return handle->GetControlFlags();
 }
 
+DIRECTUILIB_API HWND Delphi_ControlUI_GetNativeWindow(CControlUI* handle) {
+	return handle->GetNativeWindow();
+}
+
 DIRECTUILIB_API bool Delphi_ControlUI_Activate(CControlUI* handle) {
     return handle->Activate();
 }
@@ -752,14 +781,6 @@ DIRECTUILIB_API bool Delphi_ControlUI_DrawImage(CControlUI* handle ,HDC hDC, TDr
     return handle->DrawImage(hDC, drawInfo);
 }
 
-DIRECTUILIB_API int Delphi_ControlUI_GetBorderSize(CControlUI* handle) {
-    return handle->GetBorderSize();
-}
-
-DIRECTUILIB_API void Delphi_ControlUI_SetBorderSize_01(CControlUI* handle ,int nSize) {
-    handle->SetBorderSize(nSize);
-}
-
 DIRECTUILIB_API DWORD Delphi_ControlUI_GetBorderColor(CControlUI* handle) {
     return handle->GetBorderColor();
 }
@@ -768,40 +789,16 @@ DIRECTUILIB_API void Delphi_ControlUI_SetBorderColor(CControlUI* handle ,DWORD d
     handle->SetBorderColor(dwBorderColor);
 }
 
-DIRECTUILIB_API void Delphi_ControlUI_SetBorderSize_02(CControlUI* handle ,RECT rc) {
-    handle->SetBorderSize(rc);
+DIRECTUILIB_API void Delphi_ControlUI_GetBorderSize(CControlUI* handle, RECT& Result) {
+	Result = handle->GetBorderSize();
 }
 
-DIRECTUILIB_API int Delphi_ControlUI_GetLeftBorderSize(CControlUI* handle) {
-    return handle->GetLeftBorderSize();
+DIRECTUILIB_API void Delphi_ControlUI_SetBorderSize_01(CControlUI* handle, RECT rc) {
+	handle->SetBorderSize(rc);
 }
 
-DIRECTUILIB_API void Delphi_ControlUI_SetLeftBorderSize(CControlUI* handle ,int nSize) {
-    handle->SetLeftBorderSize(nSize);
-}
-
-DIRECTUILIB_API int Delphi_ControlUI_GetTopBorderSize(CControlUI* handle) {
-    return handle->GetTopBorderSize();
-}
-
-DIRECTUILIB_API void Delphi_ControlUI_SetTopBorderSize(CControlUI* handle ,int nSize) {
-    handle->SetTopBorderSize(nSize);
-}
-
-DIRECTUILIB_API int Delphi_ControlUI_GetRightBorderSize(CControlUI* handle) {
-    return handle->GetRightBorderSize();
-}
-
-DIRECTUILIB_API void Delphi_ControlUI_SetRightBorderSize(CControlUI* handle ,int nSize) {
-    handle->SetRightBorderSize(nSize);
-}
-
-DIRECTUILIB_API int Delphi_ControlUI_GetBottomBorderSize(CControlUI* handle) {
-    return handle->GetBottomBorderSize();
-}
-
-DIRECTUILIB_API void Delphi_ControlUI_SetBottomBorderSize(CControlUI* handle ,int nSize) {
-    handle->SetBottomBorderSize(nSize);
+DIRECTUILIB_API void Delphi_ControlUI_SetBorderSize_02(CControlUI* handle, int iSize) {
+	handle->SetBorderSize(iSize);
 }
 
 DIRECTUILIB_API int Delphi_ControlUI_GetBorderStyle(CControlUI* handle) {
@@ -1681,8 +1678,8 @@ DIRECTUILIB_API CControlUI* Delphi_PaintManagerUI_GetFocus(CPaintManagerUI* hand
     return handle->GetFocus();
 }
 
-DIRECTUILIB_API void Delphi_PaintManagerUI_SetFocus(CPaintManagerUI* handle ,CControlUI* pControl) {
-    handle->SetFocus(pControl);
+DIRECTUILIB_API void Delphi_PaintManagerUI_SetFocus(CPaintManagerUI* handle, CControlUI* pControl, bool bFocusWnd) {
+	handle->SetFocus(pControl, bFocusWnd);
 }
 
 DIRECTUILIB_API void Delphi_PaintManagerUI_SetFocusNeeded(CPaintManagerUI* handle ,CControlUI* pControl) {
@@ -1729,12 +1726,12 @@ DIRECTUILIB_API bool Delphi_PaintManagerUI_RemoveNotifier(CPaintManagerUI* handl
     return handle->RemoveNotifier(pControl);
 }
 
-DIRECTUILIB_API void Delphi_PaintManagerUI_SendNotify_01(CPaintManagerUI* handle ,TNotifyUI& Msg, bool bAsync) {
-    handle->SendNotify(Msg, bAsync);
+DIRECTUILIB_API void Delphi_PaintManagerUI_SendNotify_01(CPaintManagerUI* handle, TNotifyUI& Msg, bool bAsync, bool bEnableRepeat) {
+	handle->SendNotify(Msg, bAsync, bEnableRepeat);
 }
 
-DIRECTUILIB_API void Delphi_PaintManagerUI_SendNotify_02(CPaintManagerUI* handle ,CControlUI* pControl, LPCTSTR pstrMessage, WPARAM wParam, LPARAM lParam, bool bAsync) {
-    handle->SendNotify(pControl, pstrMessage, wParam, lParam, bAsync);
+DIRECTUILIB_API void Delphi_PaintManagerUI_SendNotify_02(CPaintManagerUI* handle, CControlUI* pControl, LPCTSTR pstrMessage, WPARAM wParam, LPARAM lParam, bool bAsync, bool bEnableRepeat) {
+	handle->SendNotify(pControl, pstrMessage, wParam, lParam, bAsync, bEnableRepeat);
 }
 
 DIRECTUILIB_API bool Delphi_PaintManagerUI_AddPreMessageFilter(CPaintManagerUI* handle ,IMessageFilterUI* pFilter) {
@@ -1769,16 +1766,16 @@ DIRECTUILIB_API bool Delphi_PaintManagerUI_SetPostPaintIndex(CPaintManagerUI* ha
     return handle->SetPostPaintIndex(pControl, iIndex);
 }
 
-DIRECTUILIB_API int Delphi_PaintManagerUI_GetPaintChildWndCount(CPaintManagerUI* handle) {
-	return handle->GetPaintChildWndCount();
+DIRECTUILIB_API int Delphi_PaintManagerUI_GetNativeWindowCount(CPaintManagerUI* handle) {
+	return handle->GetNativeWindowCount();
 }
 
-DIRECTUILIB_API bool Delphi_PaintManagerUI_AddPaintChildWnd(CPaintManagerUI* handle, HWND hChildWnd) {
-	return handle->AddPaintChildWnd(hChildWnd);
+DIRECTUILIB_API bool Delphi_PaintManagerUI_AddNativeWindow(CPaintManagerUI* handle, CControlUI* pControl, HWND hChildWnd) {
+	return handle->AddNativeWindow(pControl, hChildWnd);
 }
 
-DIRECTUILIB_API bool Delphi_PaintManagerUI_RemovePaintChildWnd(CPaintManagerUI* handle, HWND hChildWnd) {
-	return handle->RemovePaintChildWnd(hChildWnd);
+DIRECTUILIB_API bool Delphi_PaintManagerUI_RemoveNativeWindow(CPaintManagerUI* handle, HWND hChildWnd) {
+	return handle->RemoveNativeWindow(hChildWnd);
 }
 
 DIRECTUILIB_API void Delphi_PaintManagerUI_AddDelayedCleanup(CPaintManagerUI* handle ,CControlUI* pControl) {
@@ -1928,6 +1925,7 @@ DIRECTUILIB_API bool Delphi_PaintManagerUI_RemoveWindowCustomAttribute(CPaintMan
 DIRECTUILIB_API void Delphi_PaintManagerUI_RemoveAllWindowCustomAttribute(CPaintManagerUI* handle) {
 	handle->RemoveAllWindowCustomAttribute();
 }
+
 
 //================================CContainerUI============================
 
@@ -3496,6 +3494,14 @@ DIRECTUILIB_API LPVOID Delphi_DateTimeUI_GetInterface(CDateTimeUI* handle ,LPCTS
     return handle->GetInterface(pstrName);
 }
 
+DIRECTUILIB_API UINT Delphi_DateTimeUI_GetControlFlags(CDateTimeUI* handle) {
+	return handle->GetControlFlags();
+}
+
+DIRECTUILIB_API HWND Delphi_DateTimeUI_GetNativeWindow(CDateTimeUI* handle) {
+	return handle->GetNativeWindow();
+}
+
 DIRECTUILIB_API SYSTEMTIME& Delphi_DateTimeUI_GetTime(CDateTimeUI* handle) {
     return handle->GetTime();
 }
@@ -3540,6 +3546,10 @@ DIRECTUILIB_API LPVOID Delphi_EditUI_GetInterface(CEditUI* handle ,LPCTSTR pstrN
 
 DIRECTUILIB_API UINT Delphi_EditUI_GetControlFlags(CEditUI* handle) {
     return handle->GetControlFlags();
+}
+
+DIRECTUILIB_API HWND Delphi_EditUI_GetNativeWindow(CEditUI* handle) {
+	return handle->GetNativeWindow();
 }
 
 DIRECTUILIB_API void Delphi_EditUI_SetEnabled(CEditUI* handle ,bool bEnable) {
@@ -4248,8 +4258,8 @@ DIRECTUILIB_API int Delphi_ScrollBarUI_GetScrollPos(CScrollBarUI* handle) {
     return handle->GetScrollPos();
 }
 
-DIRECTUILIB_API void Delphi_ScrollBarUI_SetScrollPos(CScrollBarUI* handle ,int nPos) {
-    handle->SetScrollPos(nPos);
+DIRECTUILIB_API void Delphi_ScrollBarUI_SetScrollPos(CScrollBarUI* handle, int nPos, bool bTriggerEvent) {
+	handle->SetScrollPos(nPos, bTriggerEvent);
 }
 
 DIRECTUILIB_API int Delphi_ScrollBarUI_GetLineSize(CScrollBarUI* handle) {
@@ -5041,8 +5051,12 @@ DIRECTUILIB_API LPVOID Delphi_ActiveXUI_GetInterface(CActiveXUI* handle ,LPCTSTR
     return handle->GetInterface(pstrName);
 }
 
-DIRECTUILIB_API HWND Delphi_ActiveXUI_GetHostWindow(CActiveXUI* handle) {
-    return handle->GetHostWindow();
+DIRECTUILIB_API UINT Delphi_ActiveXUI_GetControlFlags(CActiveXUI* handle) {
+	return handle->GetControlFlags();
+}
+
+DIRECTUILIB_API HWND Delphi_ActiveXUI_GetNativeWindow(CActiveXUI* handle) {
+	return handle->GetNativeWindow();
 }
 
 DIRECTUILIB_API bool Delphi_ActiveXUI_IsDelayCreate(CActiveXUI* handle) {
@@ -5272,12 +5286,12 @@ DIRECTUILIB_API void Delphi_RenderEngine_DrawLine(HDC hDC, RECT& rc, int nSize, 
     CRenderEngine::DrawLine(hDC, rc, nSize, dwPenColor, nStyle);
 }
 
-DIRECTUILIB_API void Delphi_RenderEngine_DrawRect(HDC hDC, RECT& rc, int nSize, DWORD dwPenColor) {
-    CRenderEngine::DrawRect(hDC, rc, nSize, dwPenColor);
+DIRECTUILIB_API void Delphi_RenderEngine_DrawRect(HDC hDC, RECT& rc, int nSize, DWORD dwPenColor, int nStyle) {
+	CRenderEngine::DrawRect(hDC, rc, nSize, dwPenColor, nStyle);
 }
 
-DIRECTUILIB_API void Delphi_RenderEngine_DrawRoundRect(HDC hDC, RECT& rc, int width, int height, int nSize, DWORD dwPenColor) {
-    CRenderEngine::DrawRoundRect(hDC, rc, width, height, nSize, dwPenColor);
+DIRECTUILIB_API void Delphi_RenderEngine_DrawRoundRect(HDC hDC, RECT& rc, int width, int height, int nSize, DWORD dwPenColor, int nStyle) {
+	CRenderEngine::DrawRoundRect(hDC, rc, width, height, nSize, dwPenColor, nStyle);
 }
 
 DIRECTUILIB_API void Delphi_RenderEngine_DrawText(HDC hDC, CPaintManagerUI* pManager, RECT& rc, LPCTSTR pstrText, DWORD dwTextColor, int iFont, UINT uStyle) {
@@ -5629,6 +5643,10 @@ DIRECTUILIB_API void Delphi_NativeControlUI_SetInternVisible(CNativeControlUI* h
     handle->SetInternVisible(bVisible);
 }
 
+DIRECTUILIB_API void Delphi_NativeControlUI_SetVisible(CNativeControlUI* handle, bool bVisible) {
+	handle->SetVisible(bVisible);
+}
+
 DIRECTUILIB_API void Delphi_NativeControlUI_SetPos(CNativeControlUI* handle ,RECT rc, bool bNeedInvalidate) {
     handle->SetPos(rc, bNeedInvalidate);
 }
@@ -5648,6 +5666,7 @@ DIRECTUILIB_API void Delphi_NativeControlUI_SetText(CNativeControlUI* handle ,LP
 DIRECTUILIB_API void Delphi_NativeControlUI_SetNativeHandle(CNativeControlUI* handle, HWND hWd) {
 	handle->SetNativeHandle(hWd);
 }
+
 
 
 //================================CWkeWebbrowserUI============================
@@ -5680,3 +5699,128 @@ DIRECTUILIB_API void Delphi_WkeWebbrowserUI_SetDoPaintCallback(CWkeWebbrowserUI*
     handle->SetDoPaintCallback(ACallback);
 }
 */
+//================================CMenuUI============================
+
+DIRECTUILIB_API CMenuUI* Delphi_MenuUI_CppCreate() {
+	return new CMenuUI();
+}
+
+DIRECTUILIB_API void Delphi_MenuUI_CppDestroy(CMenuUI* handle) {
+	delete handle;
+}
+
+DIRECTUILIB_API LPCTSTR Delphi_MenuUI_GetClass(CMenuUI* handle) {
+	return handle->GetClass();
+}
+
+DIRECTUILIB_API LPVOID Delphi_MenuUI_GetInterface(CMenuUI* handle, LPCTSTR pstrName) {
+	return handle->GetInterface(pstrName);
+}
+
+DIRECTUILIB_API void Delphi_MenuUI_DoEvent(CMenuUI* handle, TEventUI& event) {
+	handle->DoEvent(event);
+}
+
+DIRECTUILIB_API bool Delphi_MenuUI_Add(CMenuUI* handle, CControlUI* pControl) {
+	return handle->Add(pControl);
+}
+
+DIRECTUILIB_API bool Delphi_MenuUI_AddAt(CMenuUI* handle, CControlUI* pControl, int iIndex) {
+	return handle->AddAt(pControl, iIndex);
+}
+
+DIRECTUILIB_API int Delphi_MenuUI_GetItemIndex(CMenuUI* handle, CControlUI* pControl) {
+	return handle->GetItemIndex(pControl);
+}
+
+DIRECTUILIB_API bool Delphi_MenuUI_SetItemIndex(CMenuUI* handle, CControlUI* pControl, int iIndex) {
+	return handle->SetItemIndex(pControl, iIndex);
+}
+
+DIRECTUILIB_API bool Delphi_MenuUI_Remove(CMenuUI* handle, CControlUI* pControl) {
+	return handle->Remove(pControl);
+}
+
+DIRECTUILIB_API void Delphi_MenuUI_EstimateSize(CMenuUI* handle, SIZE szAvailable, SIZE& Result) {
+	Result = handle->EstimateSize(szAvailable);
+}
+
+DIRECTUILIB_API void Delphi_MenuUI_SetAttribute(CMenuUI* handle, LPCTSTR pstrName, LPCTSTR pstrValue) {
+	handle->SetAttribute(pstrName, pstrValue);
+}
+
+//================================CMenuWnd============================
+
+DIRECTUILIB_API CMenuWnd* Delphi_MenuWnd_CppCreate(HWND hParent, CPaintManagerUI* pMainPaint) {
+	return new CMenuWnd(hParent, pMainPaint);
+}
+
+DIRECTUILIB_API void Delphi_MenuWnd_CppDestroy(CMenuWnd* handle) {
+	delete handle;
+}
+
+DIRECTUILIB_API void Delphi_MenuWnd_Init(CMenuWnd* handle, CMenuElementUI* pOwner, STRINGorID xml, LPCTSTR pSkinType, POINT point) {
+	handle->Init(pOwner, xml, pSkinType, point);
+}
+
+DIRECTUILIB_API LPCTSTR Delphi_MenuWnd_GetWindowClassName(CMenuWnd* handle) {
+	return handle->GetWindowClassName();
+}
+
+DIRECTUILIB_API void Delphi_MenuWnd_OnFinalMessage(CMenuWnd* handle, HWND hWnd) {
+	handle->OnFinalMessage(hWnd);
+}
+
+DIRECTUILIB_API LRESULT Delphi_MenuWnd_HandleMessage(CMenuWnd* handle, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+	return handle->HandleMessage(uMsg, wParam, lParam);
+}
+
+DIRECTUILIB_API BOOL Delphi_MenuWnd_Receive(CMenuWnd* handle, ContextMenuParam param) {
+	return handle->Receive(param);
+}
+
+//================================CMenuElementUI============================
+
+DIRECTUILIB_API CMenuElementUI* Delphi_MenuElementUI_CppCreate() {
+	return new CMenuElementUI();
+}
+
+DIRECTUILIB_API void Delphi_MenuElementUI_CppDestroy(CMenuElementUI* handle) {
+	delete handle;
+}
+
+DIRECTUILIB_API LPCTSTR Delphi_MenuElementUI_GetClass(CMenuElementUI* handle) {
+	return handle->GetClass();
+}
+
+DIRECTUILIB_API LPVOID Delphi_MenuElementUI_GetInterface(CMenuElementUI* handle, LPCTSTR pstrName) {
+	return handle->GetInterface(pstrName);
+}
+
+DIRECTUILIB_API void Delphi_MenuElementUI_DoPaint(CMenuElementUI* handle, HDC hDC, RECT& rcPaint) {
+	handle->DoPaint(hDC, rcPaint);
+}
+
+DIRECTUILIB_API void Delphi_MenuElementUI_DrawItemText(CMenuElementUI* handle, HDC hDC, RECT& rcItem) {
+	handle->DrawItemText(hDC, rcItem);
+}
+
+DIRECTUILIB_API void Delphi_MenuElementUI_EstimateSize(CMenuElementUI* handle, SIZE szAvailable, SIZE& Result) {
+	Result = handle->EstimateSize(szAvailable);
+}
+
+DIRECTUILIB_API bool Delphi_MenuElementUI_Activate(CMenuElementUI* handle) {
+	return handle->Activate();
+}
+
+DIRECTUILIB_API void Delphi_MenuElementUI_DoEvent(CMenuElementUI* handle, TEventUI& event) {
+	handle->DoEvent(event);
+}
+
+DIRECTUILIB_API CMenuWnd* Delphi_MenuElementUI_GetMenuWnd(CMenuElementUI* handle) {
+	return handle->GetMenuWnd();
+}
+
+DIRECTUILIB_API void Delphi_MenuElementUI_CreateMenuWnd(CMenuElementUI* handle) {
+	handle->CreateMenuWnd();
+}

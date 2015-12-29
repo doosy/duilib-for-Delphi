@@ -212,18 +212,9 @@ UINT WINAPI PrivateExtractIcons(
 uses 
   uIconToPng;
 
-
-//function PrivateExtractIcons(lpszFile: LPCTSTR; nIconIndex, cxIcon, cyIcon: Integer;
-//   var phicon: HICON; var piconid: UINT; nIcons, flags: UINT): UINT; stdcall;
-//    external user32 name 'PrivateExtractIconsW';
-
-{$IFDEF UNICODE}
-    function PrivateExtractIcons(lpszFile: PChar; nIconIndex, cxIcon, cyIcon: integer;
-    phicon: PHANDLE; piconid: PDWORD; nicon, flags: DWORD): DWORD; stdcall ; external 'user32.dll' name 'PrivateExtractIconsW';
-{$ELSE}
-    function PrivateExtractIcons(lpszFile: PChar; nIconIndex, cxIcon, cyIcon: integer;
-    phicon: PHANDLE; piconid: PDWORD; nicon, flags: DWORD): DWORD; stdcall ; external 'user32.dll' name 'PrivateExtractIconsA';
-{$ENDIF}
+function PrivateExtractIcons(lpszFile: LPCTSTR; nIconIndex, cxIcon, cyIcon: Integer;
+   var phicon: HICON; var piconid: UINT; nIcons, flags: UINT): UINT; stdcall;
+    external user32 name {$IFDEF UICODE}'PrivateExtractIconsW'{$ELSE}'PrivateExtractIconsA'{$ENDIF};
 
 function CreateIconInfo(AText, AIconPath: string): TIconInfo;
 begin
@@ -721,7 +712,7 @@ var
   dResturn:Cardinal;
 begin
   Result := '';
-  dResturn:=PrivateExtractIcons(PChar(AFileName), 0, 48, 48, @LIcon, @LIconId, 1, LR_LOADFROMFILE);
+  dResturn:=PrivateExtractIcons(PChar(AFileName), 0, 48, 48, LIcon, LIconId, 1, LR_LOADFROMFILE);
   if dResturn <> 0 then
   begin
     ConvertIconToPng(LIcon, GetSaveAbsIconFileName(AFileName));

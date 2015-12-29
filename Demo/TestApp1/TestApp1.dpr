@@ -6,6 +6,10 @@ program TestApp1;
 
 {$R *.res}
 
+// 不引用时间控件就会出错。。。
+{$R WindowsXP.res}
+
+
 uses
   Windows,
   Messages,
@@ -17,6 +21,7 @@ uses
   DuiActiveX,
   DuiWebBrowser,
   DuiListUI,
+  DuiMenu,
   Duilib;
 
 type
@@ -68,13 +73,15 @@ end;
 procedure TFrameWindowWnd.DoInitWindow;
 begin
   inherited;
-
+  Writeln(Format('mainpaint=%p', [Pointer(PaintManagerUI)]));
 end;
 
 procedure TFrameWindowWnd.DoNotify(var Msg: TNotifyUI);
 var
   LType, LCtlName: string;
   pRich: CRichEditUI;
+  pMenu: CMenuWnd;
+  point: TPoint;
 begin
   inherited;
 {$IFNDEF UseLowVer}
@@ -87,6 +94,11 @@ begin
   begin
     if LCtlName = 'insertimagebtn' then
     begin
+      pMenu := CMenuWnd.CppCreate(Handle, PaintManagerUI);
+      point := msg.ptMouse;
+      ClientToScreen(Handle, point);
+      pMenu.Init(nil, 'menutest.xml', '', point);
+
       pRich := CRichEditUI(FindControl('testrichedit'));
       if Assigned(pRich) then
         pRich.Text := '侧芽发呆发呆asAKSJLKDSADSJ  DSADS';
@@ -94,12 +106,15 @@ begin
     end else
     if LCtlName = 'changeskinbtn' then
     begin
-      if CPaintManagerUI.GetResourcePath = CPaintManagerUI.GetInstancePath then
-        CPaintManagerUI.SetResourcePath(CPaintManagerUI.GetInstancePath + 'skin\FlashRes')
+      if CPaintManagerUI.GetResourcePath = CPaintManagerUI.GetInstancePath + 'skin\' then
+        CPaintManagerUI.SetResourcePath(CPaintManagerUI.GetInstancePath + 'skin\TestAppRes')
       else
-        CPaintManagerUI.SetResourcePath(CPaintManagerUI.GetInstancePath);
+        CPaintManagerUI.SetResourcePath(CPaintManagerUI.GetInstancePath + 'skin\');
       CPaintManagerUI.ReloadSkin;
     end;
+  end else if LType = 'menuitemclick' then
+  begin
+    Writeln('menuitemclick', '    Name=', LCtlName);
   end;
 end;
 
@@ -108,6 +123,9 @@ var
 
 begin
   try
+    Writeln(SizeOf(UILIB_RESOURCETYPE));
+    Writeln(SizeOf(TResourceType));
+    Writeln(SizeOf(TEventTypeUI));
     DuiApplication.Initialize;
     FrameWindowWnd := TFrameWindowWnd.Create;
     FrameWindowWnd.CenterWindow;

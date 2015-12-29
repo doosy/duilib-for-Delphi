@@ -17,6 +17,7 @@ unit Duilib;
 // 根据选择禁用有些提示，最好是确定单元后再这样做
 {$HINTS OFF}
 {$WARN SYMBOL_DEPRECATED OFF}
+{$Z4+}
 
 interface
 
@@ -78,7 +79,10 @@ type
   CControlUI = class;
   CScrollBarUI = class;
   CTreeViewUI = class;
-
+  
+  
+  SHORT = SmallInt;
+  PShort = ^SHORT;
 {$IFDEF UseLowVer}
   TRectF = record
     Left, Top, Right, Bottom: Single;
@@ -89,7 +93,6 @@ type
     LPBYTE = PByte;
     LPCVOID = Pointer;
     SIZE_T = Cardinal;
-    PShort = ^SHORT;
     UIntPtr = Cardinal;
     LONG = Longint;
   {$ELSE}
@@ -117,14 +120,9 @@ type
   // 这里定义为一个记录， 因为他内部返回的并不是一个指针，so，字段大小不一样了，只能改record方式来做
   PCDuiString = ^CDuiString; // 这个有点牵强吧
   CDuiString = record
-//{$IFNDEF UseLowVer}
-//  private
-//{$ENDIF}
     m_pstr: LPTSTR{$IFNDEF UseLowVer} deprecated 'do not use'{$ENDIF};
-    /// <summary>
-    ///   这个不要用，使用　ToString
-    /// </summary>
-    m_szBuffer: array[0..MAX_LOCAL_STRING_LEN] of Char deprecated 'do not use';
+    // 只是用来占位用，不要使用
+    m_szBuffer: array[0..MAX_LOCAL_STRING_LEN] of Char deprecated{$IFNDEF UseLowVer} 'do not use'{$ENDIF};
 {$IFNDEF UseLowVer}
   public
     class operator Equal(const Lhs, Rhs : CDuiString) : Boolean; overload;
@@ -145,14 +143,11 @@ type
   end;
 
   /// <summary>
-  ///  来自磁盘文件, 来自磁盘zip压缩包, 来自资源, 来自资源的zip压缩包 , 使用 {$Z4+} 指令对齐4字节
+  ///  来自磁盘文件, 来自磁盘zip压缩包, 来自资源, 来自资源的zip压缩包
   /// </summary>
-  {$Z4+}
   UILIB_RESOURCETYPE  = (UILIB_FILE = 1, UILIB_ZIP, UILIB_RESOURCE, UILIB_ZIPRESOURCE);
   TResourceType = UILIB_RESOURCETYPE;
 
-
-  {$Z4+}
   EVENTTYPE_UI = (
     UIEVENT__FIRST = 1,
     UIEVENT__KEYBEGIN,
@@ -293,8 +288,8 @@ type
     function GetSize: Integer;
     function GetAt(iIndex: Integer): string;
   public
-    class function CppCreate: CStdStringPtrMap; deprecated 'use Create';
-    procedure CppDestroy; deprecated 'use Free';
+    class function CppCreate: CStdStringPtrMap; deprecated{$IFNDEF UseLowver} 'use Create'{$ENDIF};
+    procedure CppDestroy; deprecated{$IFNDEF UseLowVer} 'use Free'{$ENDIF};
     class function Create: CStdStringPtrMap;
     procedure Free;
     procedure Resize(nSize: Integer = 83);
@@ -329,8 +324,8 @@ type
     function GetData: Pointer;
     function GetAt(iIndex: Integer): Pointer;
   public
-    class function CppCreate(iElementSize: Integer; iPreallocSize: Integer = 0): CStdValArray; deprecated 'use Create';
-    procedure CppDestroy; deprecated 'use Free';
+    class function CppCreate(iElementSize: Integer; iPreallocSize: Integer = 0): CStdValArray; deprecated{$IFNDEF UseLowVer} 'use Create'{$ENDIF};
+    procedure CppDestroy; deprecated{$IFNDEF UseLowVer} 'use Free'{$ENDIF};
     class function Create(iElementSize: Integer; iPreallocSize: Integer = 0): CStdValArray;
     procedure Free;
     procedure Empty;
@@ -555,7 +550,7 @@ type
     procedure RemoveOptionGroup(pStrGroupName: string; pControl: CControlUI);
     procedure RemoveAllOptionGroups;
     function GetFocus: CControlUI;
-    procedure SetFocus(pControl: CControlUI);
+    procedure SetFocus(pControl: CControlUI; bFocusWnd: Boolean = True);
     procedure SetFocusNeeded(pControl: CControlUI);
     function SetNextTabControl(bForward: Boolean = True): Boolean;
     function SetTimer(pControl: CControlUI; nTimerID: UINT; uElapse: UINT): Boolean;
@@ -567,8 +562,8 @@ type
     function IsCaptured: Boolean;
     function AddNotifier(pControl: INotifyUI): Boolean;
     function RemoveNotifier(pControl: INotifyUI): Boolean;
-    procedure SendNotify(var Msg: TNotifyUI; bAsync: Boolean = False); overload;
-    procedure SendNotify(pControl: CControlUI; pstrMessage: string; wParam: WPARAM = 0; lParam: LPARAM = 0; bAsync: Boolean = False); overload;
+    procedure SendNotify(const Msg: TNotifyUI; bAsync: Boolean = False; bEnableRepeat: Boolean = True); overload;
+    procedure SendNotify(pControl: CControlUI; pstrMessage: string; wParam: WPARAM = 0; lParam: LPARAM = 0; bAsync: Boolean = False; bEnableRepeat: Boolean = True); overload;
     function AddPreMessageFilter(pFilter: IMessageFilterUI): Boolean;
     function RemovePreMessageFilter(pFilter: IMessageFilterUI): Boolean;
     function AddMessageFilter(pFilter: IMessageFilterUI): Boolean;
@@ -577,9 +572,9 @@ type
     function AddPostPaint(pControl: CControlUI): Boolean;
     function RemovePostPaint(pControl: CControlUI): Boolean;
     function SetPostPaintIndex(pControl: CControlUI; iIndex: Integer): Boolean;
-    function GetPaintChildWndCount: Integer;
-    function AddPaintChildWnd(hChildWnd: HWND): Boolean;
-    function RemovePaintChildWnd(hChildWnd: HWND): Boolean;
+    function GetNativeWindowCount: Integer;
+    function AddNativeWindow(pControl: CControlUI; hChildWnd: HWND): Boolean;
+    function RemoveNativeWindow(hChildWnd: HWND): Boolean;
     procedure AddDelayedCleanup(pControl: CControlUI);
     function AddTranslateAccelerator(pTranslateAccelerator: ITranslateAccelerator): Boolean;
     function RemoveTranslateAccelerator(pTranslateAccelerator: ITranslateAccelerator): Boolean;
@@ -620,7 +615,6 @@ type
     procedure RemoveAllWindowCustomAttribute;
   public
     property Name: string read GetName;
-    property PaintChildWndCount: Integer read GetPaintChildWndCount;
   	property ForceUseSharedRes: Boolean read IsForceUseSharedRes write SetForceUseSharedRes;
     property Painting: Boolean read IsPainting write SetPainting;
     property LayeredImage: string read GetLayeredImage write SetLayeredImage;
@@ -666,6 +660,7 @@ type
     function GetClass: string;
     function GetInterface(pstrName: string): Pointer;
     function GetControlFlags: UINT;
+    function GetNativeWindow: HWND;
     function Activate: Boolean;
     function GetManager: CPaintManagerUI;
     procedure SetManager(pManager: CPaintManagerUI; pParent: CControlUI; bInit: Boolean = True);
@@ -687,19 +682,11 @@ type
     function GetBorderRound: TSize;
     procedure SetBorderRound(cxyRound: TSize);
     function DrawImage(hDC: HDC; var drawInfo: TDrawInfo): Boolean;
-    function GetBorderSize: Integer;
-    procedure SetBorderSize(nSize: Integer); overload;
     function GetBorderColor: DWORD;
     procedure SetBorderColor(dwBorderColor: DWORD);
+    function GetBorderSize: TRect;
     procedure SetBorderSize(rc: TRect); overload;
-    function GetLeftBorderSize: Integer;
-    procedure SetLeftBorderSize(nSize: Integer);
-    function GetTopBorderSize: Integer;
-    procedure SetTopBorderSize(nSize: Integer);
-    function GetRightBorderSize: Integer;
-    procedure SetRightBorderSize(nSize: Integer);
-    function GetBottomBorderSize: Integer;
-    procedure SetBottomBorderSize(nSize: Integer);
+    procedure SetBorderSize(iSize: Integer); overload;
     function GetBorderStyle: Integer;
     procedure SetBorderStyle(nStyle: Integer);
     function GetPos: TRect;
@@ -805,7 +792,6 @@ type
     property FocusBorderColor: DWORD read GetFocusBorderColor write SetFocusBorderColor;
     property ColorHSL: Boolean read IsColorHSL write SetColorHSL;
     property BorderRound: TSize read GetBorderRound write SetBorderRound;
-    property BorderSize: Integer read GetBorderSize{$IFNDEF UseLowVer}write SetBorderSize{$ENDIF};
     property Shortcut: Char read GetShortcut write SetShortcut;
     property ContextMenuUsed: Boolean read IsContextMenuUsed write SetContextMenuUsed;
     property VirtualWnd: string read GetVirtualWnd write SetVirtualWnd;
@@ -1413,6 +1399,8 @@ type
     procedure CppDestroy;
     function GetClass: string;
     function GetInterface(pstrName: string): Pointer;
+    function GetControlFlags: UINT;
+    function GetNativeWindow: HWND;
     function GetTime: TDateTime;
     procedure SetTime(pst: TDateTime);
     procedure SetReadOnly(bReadOnly: Boolean);
@@ -1431,6 +1419,7 @@ type
     function GetClass: string;
     function GetInterface(pstrName: string): Pointer;
     function GetControlFlags: UINT;
+    function GetNativeWindow: HWND;
     procedure SetEnabled(bEnable: Boolean = True);
     procedure SetText(pstrText: string);
     procedure SetMaxChar(uMax: UINT);
@@ -1527,7 +1516,7 @@ type
     function GetScrollRange: Integer;
     procedure SetScrollRange(nRange: Integer);
     function GetScrollPos: Integer;
-    procedure SetScrollPos(nPos: Integer);
+    procedure SetScrollPos(nPos: Integer; bTriggerEvent: Boolean = True);
     function GetLineSize: Integer;
     procedure SetLineSize(nSize: Integer);
     function GetShowButton1: Boolean;
@@ -1593,7 +1582,6 @@ type
     property Owner: CContainerUI read GetOwner write SetOwner;
     property Horizontal: Boolean read IsHorizontal write SetHorizontal;
     property ScrollRange: Integer read GetScrollRange write SetScrollRange;
-    property ScrollPos: Integer read GetScrollPos write SetScrollPos;
     property LineSize: Integer read GetLineSize write SetLineSize;
     property ShowButton1: Boolean read GetShowButton1 write SetShowButton1;
     property Button1Color: DWORD read GetButton1Color write SetButton1Color;
@@ -1807,8 +1795,8 @@ type
     class procedure DrawColor(hDC: HDC; var rc: TRect; color: DWORD);
     class procedure DrawGradient(hDC: HDC; var rc: TRect; dwFirst: DWORD; dwSecond: DWORD; bVertical: Boolean; nSteps: Integer);
     class procedure DrawLine(hDC: HDC; var rc: TRect; nSize: Integer; dwPenColor: DWORD; nStyle: Integer = PS_SOLID);
-    class procedure DrawRect(hDC: HDC; var rc: TRect; nSize: Integer; dwPenColor: DWORD);
-    class procedure DrawRoundRect(hDC: HDC; var rc: TRect; width: Integer; height: Integer; nSize: Integer; dwPenColor: DWORD);
+    class procedure DrawRect(hDC: HDC; var rc: TRect; nSize: Integer; dwPenColor: DWORD; nStyle: Integer = PS_SOLID);
+    class procedure DrawRoundRect(hDC: HDC; var rc: TRect; width: Integer; height: Integer; nSize: Integer; dwPenColor: DWORD; nStyle: Integer = PS_SOLID);
     class procedure DrawText(hDC: HDC; pManager: CPaintManagerUI; var rc: TRect; pstrText: string; dwTextColor: DWORD; iFont: Integer; uStyle: UINT);
     class procedure DrawHtmlText(hDC: HDC; pManager: CPaintManagerUI; var rc: TRect; pstrText: string; dwTextColor: DWORD; pLinks: PRect; sLinks: string; var nLinkRects: Integer; uStyle: UINT);
     class function GenerateBitmap(pManager: CPaintManagerUI; pControl: CControlUI; rc: TRect): HBITMAP;
@@ -1938,6 +1926,7 @@ type
     class function CppCreate(hWnd: HWND = 0): CNativeControlUI;
     procedure CppDestroy;
     procedure SetInternVisible(bVisible: Boolean = True);
+    procedure SetVisible(bVisible: Boolean = True);
     procedure SetPos(rc: TRect; bNeedInvalidate: Boolean);
     function GetClass: string;
     function GetText: string;
@@ -2053,6 +2042,7 @@ procedure Delphi_ControlUI_SetName(Handle: CControlUI; pstrName: LPCTSTR); cdecl
 function Delphi_ControlUI_GetClass(Handle: CControlUI): LPCTSTR; cdecl;
 function Delphi_ControlUI_GetInterface(Handle: CControlUI; pstrName: LPCTSTR): Pointer; cdecl;
 function Delphi_ControlUI_GetControlFlags(Handle: CControlUI): UINT; cdecl;
+function Delphi_ControlUI_GetNativeWindow(Handle: CControlUI): HWND; cdecl;
 function Delphi_ControlUI_Activate(Handle: CControlUI): Boolean; cdecl;
 function Delphi_ControlUI_GetManager(Handle: CControlUI): CPaintManagerUI; cdecl;
 procedure Delphi_ControlUI_SetManager(Handle: CControlUI; pManager: CPaintManagerUI; pParent: CControlUI; bInit: Boolean); cdecl;
@@ -2074,19 +2064,11 @@ procedure Delphi_ControlUI_SetColorHSL(Handle: CControlUI; bColorHSL: Boolean); 
 procedure Delphi_ControlUI_GetBorderRound(Handle: CControlUI; var Result: TSize); cdecl;
 procedure Delphi_ControlUI_SetBorderRound(Handle: CControlUI; cxyRound: TSize); cdecl;
 function Delphi_ControlUI_DrawImage(Handle: CControlUI; hDC: HDC; var drawInfo: TDrawInfo): Boolean; cdecl;
-function Delphi_ControlUI_GetBorderSize(Handle: CControlUI): Integer; cdecl;
-procedure Delphi_ControlUI_SetBorderSize_01(Handle: CControlUI; nSize: Integer); cdecl;
 function Delphi_ControlUI_GetBorderColor(Handle: CControlUI): DWORD; cdecl;
 procedure Delphi_ControlUI_SetBorderColor(Handle: CControlUI; dwBorderColor: DWORD); cdecl;
-procedure Delphi_ControlUI_SetBorderSize_02(Handle: CControlUI; rc: TRect); cdecl;
-function Delphi_ControlUI_GetLeftBorderSize(Handle: CControlUI): Integer; cdecl;
-procedure Delphi_ControlUI_SetLeftBorderSize(Handle: CControlUI; nSize: Integer); cdecl;
-function Delphi_ControlUI_GetTopBorderSize(Handle: CControlUI): Integer; cdecl;
-procedure Delphi_ControlUI_SetTopBorderSize(Handle: CControlUI; nSize: Integer); cdecl;
-function Delphi_ControlUI_GetRightBorderSize(Handle: CControlUI): Integer; cdecl;
-procedure Delphi_ControlUI_SetRightBorderSize(Handle: CControlUI; nSize: Integer); cdecl;
-function Delphi_ControlUI_GetBottomBorderSize(Handle: CControlUI): Integer; cdecl;
-procedure Delphi_ControlUI_SetBottomBorderSize(Handle: CControlUI; nSize: Integer); cdecl;
+procedure Delphi_ControlUI_GetBorderSize(Handle: CControlUI; var Result: TRect); cdecl;
+procedure Delphi_ControlUI_SetBorderSize_01(Handle: CControlUI; rc: TRect); cdecl;
+procedure Delphi_ControlUI_SetBorderSize_02(Handle: CControlUI; iSize: Integer); cdecl;
 function Delphi_ControlUI_GetBorderStyle(Handle: CControlUI): Integer; cdecl;
 procedure Delphi_ControlUI_SetBorderStyle(Handle: CControlUI; nStyle: Integer); cdecl;
 function Delphi_ControlUI_GetPos(Handle: CControlUI): PRect; cdecl;
@@ -2312,7 +2294,7 @@ function Delphi_PaintManagerUI_GetOptionGroup(Handle: CPaintManagerUI; pStrGroup
 procedure Delphi_PaintManagerUI_RemoveOptionGroup(Handle: CPaintManagerUI; pStrGroupName: LPCTSTR; pControl: CControlUI); cdecl;
 procedure Delphi_PaintManagerUI_RemoveAllOptionGroups(Handle: CPaintManagerUI); cdecl;
 function Delphi_PaintManagerUI_GetFocus(Handle: CPaintManagerUI): CControlUI; cdecl;
-procedure Delphi_PaintManagerUI_SetFocus(Handle: CPaintManagerUI; pControl: CControlUI); cdecl;
+procedure Delphi_PaintManagerUI_SetFocus(Handle: CPaintManagerUI; pControl: CControlUI; bFocusWnd: Boolean); cdecl;
 procedure Delphi_PaintManagerUI_SetFocusNeeded(Handle: CPaintManagerUI; pControl: CControlUI); cdecl;
 function Delphi_PaintManagerUI_SetNextTabControl(Handle: CPaintManagerUI; bForward: Boolean): Boolean; cdecl;
 function Delphi_PaintManagerUI_SetTimer(Handle: CPaintManagerUI; pControl: CControlUI; nTimerID: UINT; uElapse: UINT): Boolean; cdecl;
@@ -2324,8 +2306,8 @@ procedure Delphi_PaintManagerUI_ReleaseCapture(Handle: CPaintManagerUI); cdecl;
 function Delphi_PaintManagerUI_IsCaptured(Handle: CPaintManagerUI): Boolean; cdecl;
 function Delphi_PaintManagerUI_AddNotifier(Handle: CPaintManagerUI; pControl: INotifyUI): Boolean; cdecl;
 function Delphi_PaintManagerUI_RemoveNotifier(Handle: CPaintManagerUI; pControl: INotifyUI): Boolean; cdecl;
-procedure Delphi_PaintManagerUI_SendNotify_01(Handle: CPaintManagerUI; var Msg: TNotifyUI; bAsync: Boolean); cdecl;
-procedure Delphi_PaintManagerUI_SendNotify_02(Handle: CPaintManagerUI; pControl: CControlUI; pstrMessage: LPCTSTR; wParam: WPARAM; lParam: LPARAM; bAsync: Boolean); cdecl;
+procedure Delphi_PaintManagerUI_SendNotify_01(Handle: CPaintManagerUI; const Msg: TNotifyUI; bAsync: Boolean; bEnableRepeat: Boolean); cdecl;
+procedure Delphi_PaintManagerUI_SendNotify_02(Handle: CPaintManagerUI; pControl: CControlUI; pstrMessage: LPCTSTR; wParam: WPARAM; lParam: LPARAM; bAsync: Boolean; bEnableRepeat: Boolean); cdecl;
 function Delphi_PaintManagerUI_AddPreMessageFilter(Handle: CPaintManagerUI; pFilter: IMessageFilterUI): Boolean; cdecl;
 function Delphi_PaintManagerUI_RemovePreMessageFilter(Handle: CPaintManagerUI; pFilter: IMessageFilterUI): Boolean; cdecl;
 function Delphi_PaintManagerUI_AddMessageFilter(Handle: CPaintManagerUI; pFilter: IMessageFilterUI): Boolean; cdecl;
@@ -2334,9 +2316,9 @@ function Delphi_PaintManagerUI_GetPostPaintCount(Handle: CPaintManagerUI): Integ
 function Delphi_PaintManagerUI_AddPostPaint(Handle: CPaintManagerUI; pControl: CControlUI): Boolean; cdecl;
 function Delphi_PaintManagerUI_RemovePostPaint(Handle: CPaintManagerUI; pControl: CControlUI): Boolean; cdecl;
 function Delphi_PaintManagerUI_SetPostPaintIndex(Handle: CPaintManagerUI; pControl: CControlUI; iIndex: Integer): Boolean; cdecl;
-function Delphi_PaintManagerUI_GetPaintChildWndCount(Handle: CPaintManagerUI): Integer; cdecl;
-function Delphi_PaintManagerUI_AddPaintChildWnd(Handle: CPaintManagerUI; hChildWnd: HWND): Boolean; cdecl;
-function Delphi_PaintManagerUI_RemovePaintChildWnd(Handle: CPaintManagerUI; hChildWnd: HWND): Boolean; cdecl;
+function Delphi_PaintManagerUI_GetNativeWindowCount(Handle: CPaintManagerUI): Integer; cdecl;
+function Delphi_PaintManagerUI_AddNativeWindow(Handle: CPaintManagerUI; pControl: CControlUI; hChildWnd: HWND): Boolean; cdecl;
+function Delphi_PaintManagerUI_RemoveNativeWindow(Handle: CPaintManagerUI; hChildWnd: HWND): Boolean; cdecl;
 procedure Delphi_PaintManagerUI_AddDelayedCleanup(Handle: CPaintManagerUI; pControl: CControlUI); cdecl;
 function Delphi_PaintManagerUI_AddTranslateAccelerator(Handle: CPaintManagerUI; pTranslateAccelerator: ITranslateAccelerator): Boolean; cdecl;
 function Delphi_PaintManagerUI_RemoveTranslateAccelerator(Handle: CPaintManagerUI; pTranslateAccelerator: ITranslateAccelerator): Boolean; cdecl;
@@ -2798,6 +2780,8 @@ function Delphi_DateTimeUI_CppCreate: CDateTimeUI; cdecl;
 procedure Delphi_DateTimeUI_CppDestroy(Handle: CDateTimeUI); cdecl;
 function Delphi_DateTimeUI_GetClass(Handle: CDateTimeUI): LPCTSTR; cdecl;
 function Delphi_DateTimeUI_GetInterface(Handle: CDateTimeUI; pstrName: LPCTSTR): Pointer; cdecl;
+function Delphi_DateTimeUI_GetControlFlags(Handle: CDateTimeUI): UINT; cdecl;
+function Delphi_DateTimeUI_GetNativeWindow(Handle: CDateTimeUI): HWND; cdecl;
 function Delphi_DateTimeUI_GetTime(Handle: CDateTimeUI): PSYSTEMTIME; cdecl;
 procedure Delphi_DateTimeUI_SetTime(Handle: CDateTimeUI; pst: PSYSTEMTIME); cdecl;
 procedure Delphi_DateTimeUI_SetReadOnly(Handle: CDateTimeUI; bReadOnly: Boolean); cdecl;
@@ -2812,6 +2796,7 @@ procedure Delphi_EditUI_CppDestroy(Handle: CEditUI); cdecl;
 function Delphi_EditUI_GetClass(Handle: CEditUI): LPCTSTR; cdecl;
 function Delphi_EditUI_GetInterface(Handle: CEditUI; pstrName: LPCTSTR): Pointer; cdecl;
 function Delphi_EditUI_GetControlFlags(Handle: CEditUI): UINT; cdecl;
+function Delphi_EditUI_GetNativeWindow(Handle: CEditUI): HWND; cdecl;
 procedure Delphi_EditUI_SetEnabled(Handle: CEditUI; bEnable: Boolean); cdecl;
 procedure Delphi_EditUI_SetText(Handle: CEditUI; pstrText: LPCTSTR); cdecl;
 procedure Delphi_EditUI_SetMaxChar(Handle: CEditUI; uMax: UINT); cdecl;
@@ -2886,7 +2871,7 @@ procedure Delphi_ScrollBarUI_SetHorizontal(Handle: CScrollBarUI; bHorizontal: Bo
 function Delphi_ScrollBarUI_GetScrollRange(Handle: CScrollBarUI): Integer; cdecl;
 procedure Delphi_ScrollBarUI_SetScrollRange(Handle: CScrollBarUI; nRange: Integer); cdecl;
 function Delphi_ScrollBarUI_GetScrollPos(Handle: CScrollBarUI): Integer; cdecl;
-procedure Delphi_ScrollBarUI_SetScrollPos(Handle: CScrollBarUI; nPos: Integer); cdecl;
+procedure Delphi_ScrollBarUI_SetScrollPos(Handle: CScrollBarUI; nPos: Integer; bTriggerEvent: Boolean); cdecl;
 function Delphi_ScrollBarUI_GetLineSize(Handle: CScrollBarUI): Integer; cdecl;
 procedure Delphi_ScrollBarUI_SetLineSize(Handle: CScrollBarUI; nSize: Integer); cdecl;
 function Delphi_ScrollBarUI_GetShowButton1(Handle: CScrollBarUI): Boolean; cdecl;
@@ -3122,8 +3107,8 @@ function Delphi_RenderEngine_DrawImage_02(hDC: HDC; pManager: CPaintManagerUI; v
 procedure Delphi_RenderEngine_DrawColor(hDC: HDC; var rc: TRect; color: DWORD); cdecl;
 procedure Delphi_RenderEngine_DrawGradient(hDC: HDC; var rc: TRect; dwFirst: DWORD; dwSecond: DWORD; bVertical: Boolean; nSteps: Integer); cdecl;
 procedure Delphi_RenderEngine_DrawLine(hDC: HDC; var rc: TRect; nSize: Integer; dwPenColor: DWORD; nStyle: Integer); cdecl;
-procedure Delphi_RenderEngine_DrawRect(hDC: HDC; var rc: TRect; nSize: Integer; dwPenColor: DWORD); cdecl;
-procedure Delphi_RenderEngine_DrawRoundRect(hDC: HDC; var rc: TRect; width: Integer; height: Integer; nSize: Integer; dwPenColor: DWORD); cdecl;
+procedure Delphi_RenderEngine_DrawRect(hDC: HDC; var rc: TRect; nSize: Integer; dwPenColor: DWORD; nStyle: Integer); cdecl;
+procedure Delphi_RenderEngine_DrawRoundRect(hDC: HDC; var rc: TRect; width: Integer; height: Integer; nSize: Integer; dwPenColor: DWORD; nStyle: Integer); cdecl;
 procedure Delphi_RenderEngine_DrawText(hDC: HDC; pManager: CPaintManagerUI; var rc: TRect; pstrText: LPCTSTR; dwTextColor: DWORD; iFont: Integer; uStyle: UINT); cdecl;
 procedure Delphi_RenderEngine_DrawHtmlText(hDC: HDC; pManager: CPaintManagerUI; var rc: TRect; pstrText: LPCTSTR; dwTextColor: DWORD; pLinks: PRect; sLinks: CDuiString; var nLinkRects: Integer; uStyle: UINT); cdecl;
 function Delphi_RenderEngine_GenerateBitmap(pManager: CPaintManagerUI; pControl: CControlUI; rc: TRect): HBITMAP; cdecl;
@@ -3232,6 +3217,7 @@ procedure Delphi_TileLayoutUI_SetAttribute(Handle: CTileLayoutUI; pstrName: LPCT
 function Delphi_NativeControlUI_CppCreate(hWnd: HWND): CNativeControlUI; cdecl;
 procedure Delphi_NativeControlUI_CppDestroy(Handle: CNativeControlUI); cdecl;
 procedure Delphi_NativeControlUI_SetInternVisible(Handle: CNativeControlUI; bVisible: Boolean); cdecl;
+procedure Delphi_NativeControlUI_SetVisible(Handle: CNativeControlUI; bVisible: Boolean); cdecl;
 procedure Delphi_NativeControlUI_SetPos(Handle: CNativeControlUI; rc: TRect; bNeedInvalidate: Boolean); cdecl;
 function Delphi_NativeControlUI_GetClass(Handle: CNativeControlUI): LPCTSTR; cdecl;
 function Delphi_NativeControlUI_GetText(Handle: CNativeControlUI): CDuiString; cdecl;
@@ -3352,7 +3338,12 @@ end;
 
 class function CStdStringPtrMap.Create: CStdStringPtrMap;
 begin
-  Result := CppCreate;
+  Result := Delphi_StdStringPtrMap_CppCreate;
+end;
+
+procedure CStdStringPtrMap.Free;
+begin
+  Delphi_StdStringPtrMap_CppDestroy(Self);
 end;
 
 procedure CStdStringPtrMap.Resize(nSize: Integer);
@@ -3363,11 +3354,6 @@ end;
 function CStdStringPtrMap.Find(key: string; optimize: Boolean): Pointer;
 begin
   Result := Delphi_StdStringPtrMap_Find(Self, PChar(key), optimize);
-end;
-
-procedure CStdStringPtrMap.Free;
-begin
-  CppDestroy;
 end;
 
 function CStdStringPtrMap.Insert(key: string; pData: Pointer): Boolean;
@@ -3415,17 +3401,17 @@ end;
 class function CStdValArray.Create(iElementSize,
   iPreallocSize: Integer): CStdValArray;
 begin
-  Result := CppCreate(iElementSize, iPreallocSize);
+  Result := Delphi_StdValArray_CppCreate(iElementSize, iPreallocSize);
+end;
+
+procedure CStdValArray.Free;
+begin
+  Delphi_StdValArray_CppDestroy(Self);
 end;
 
 procedure CStdValArray.Empty;
 begin
   Delphi_StdValArray_Empty(Self);
-end;
-
-procedure CStdValArray.Free;
-begin
-  CppDestroy;
 end;
 
 function CStdValArray.IsEmpty: Boolean;
@@ -3821,6 +3807,11 @@ begin
   Result := Delphi_ControlUI_GetControlFlags(Self);
 end;
 
+function CControlUI.GetNativeWindow: HWND;
+begin
+  Result := Delphi_ControlUI_GetNativeWindow(Self);
+end;
+
 function CControlUI.Activate: Boolean;
 begin
   Result := Delphi_ControlUI_Activate(Self);
@@ -3930,16 +3921,6 @@ begin
   Result := Delphi_ControlUI_DrawImage(Self, hDC, drawInfo);
 end;
 
-function CControlUI.GetBorderSize: Integer;
-begin
-  Result := Delphi_ControlUI_GetBorderSize(Self);
-end;
-
-procedure CControlUI.SetBorderSize(nSize: Integer);
-begin
-  Delphi_ControlUI_SetBorderSize_01(Self, nSize);
-end;
-
 function CControlUI.GetBorderColor: DWORD;
 begin
   Result := Delphi_ControlUI_GetBorderColor(Self);
@@ -3950,49 +3931,19 @@ begin
   Delphi_ControlUI_SetBorderColor(Self, dwBorderColor);
 end;
 
+function CControlUI.GetBorderSize: TRect;
+begin
+  Delphi_ControlUI_GetBorderSize(Self, Result);
+end;
+
 procedure CControlUI.SetBorderSize(rc: TRect);
 begin
-  Delphi_ControlUI_SetBorderSize_02(Self, rc);
+  Delphi_ControlUI_SetBorderSize_01(Self, rc);
 end;
 
-function CControlUI.GetLeftBorderSize: Integer;
+procedure CControlUI.SetBorderSize(iSize: Integer);
 begin
-  Result := Delphi_ControlUI_GetLeftBorderSize(Self);
-end;
-
-procedure CControlUI.SetLeftBorderSize(nSize: Integer);
-begin
-  Delphi_ControlUI_SetLeftBorderSize(Self, nSize);
-end;
-
-function CControlUI.GetTopBorderSize: Integer;
-begin
-  Result := Delphi_ControlUI_GetTopBorderSize(Self);
-end;
-
-procedure CControlUI.SetTopBorderSize(nSize: Integer);
-begin
-  Delphi_ControlUI_SetTopBorderSize(Self, nSize);
-end;
-
-function CControlUI.GetRightBorderSize: Integer;
-begin
-  Result := Delphi_ControlUI_GetRightBorderSize(Self);
-end;
-
-procedure CControlUI.SetRightBorderSize(nSize: Integer);
-begin
-  Delphi_ControlUI_SetRightBorderSize(Self, nSize);
-end;
-
-function CControlUI.GetBottomBorderSize: Integer;
-begin
-  Result := Delphi_ControlUI_GetBottomBorderSize(Self);
-end;
-
-procedure CControlUI.SetBottomBorderSize(nSize: Integer);
-begin
-  Delphi_ControlUI_SetBottomBorderSize(Self, nSize);
+  Delphi_ControlUI_SetBorderSize_02(Self, iSize);
 end;
 
 function CControlUI.GetBorderStyle: Integer;
@@ -5139,9 +5090,9 @@ begin
   Result := Delphi_PaintManagerUI_GetFocus(Self);
 end;
 
-procedure CPaintManagerUI.SetFocus(pControl: CControlUI);
+procedure CPaintManagerUI.SetFocus(pControl: CControlUI; bFocusWnd: Boolean);
 begin
-  Delphi_PaintManagerUI_SetFocus(Self, pControl);
+  Delphi_PaintManagerUI_SetFocus(Self, pControl, bFocusWnd);
 end;
 
 procedure CPaintManagerUI.SetFocusNeeded(pControl: CControlUI);
@@ -5199,14 +5150,14 @@ begin
   Result := Delphi_PaintManagerUI_RemoveNotifier(Self, pControl);
 end;
 
-procedure CPaintManagerUI.SendNotify(var Msg: TNotifyUI; bAsync: Boolean);
+procedure CPaintManagerUI.SendNotify(const Msg: TNotifyUI; bAsync: Boolean; bEnableRepeat: Boolean);
 begin
-  Delphi_PaintManagerUI_SendNotify_01(Self, Msg, bAsync);
+  Delphi_PaintManagerUI_SendNotify_01(Self, Msg, bAsync, bEnableRepeat);
 end;
 
-procedure CPaintManagerUI.SendNotify(pControl: CControlUI; pstrMessage: string; wParam: WPARAM; lParam: LPARAM; bAsync: Boolean);
+procedure CPaintManagerUI.SendNotify(pControl: CControlUI; pstrMessage: string; wParam: WPARAM; lParam: LPARAM; bAsync: Boolean; bEnableRepeat: Boolean);
 begin
-  Delphi_PaintManagerUI_SendNotify_02(Self, pControl, PChar(pstrMessage), wParam, lParam, bAsync);
+  Delphi_PaintManagerUI_SendNotify_02(Self, pControl, LPCTSTR(pstrMessage), wParam, lParam, bAsync, bEnableRepeat);
 end;
 
 function CPaintManagerUI.AddPreMessageFilter(pFilter: IMessageFilterUI): Boolean;
@@ -5249,19 +5200,19 @@ begin
   Result := Delphi_PaintManagerUI_SetPostPaintIndex(Self, pControl, iIndex);
 end;
 
-function CPaintManagerUI.GetPaintChildWndCount: Integer;
+function CPaintManagerUI.GetNativeWindowCount: Integer;
 begin
-  Result := Delphi_PaintManagerUI_GetPaintChildWndCount(Self);
+  Result := Delphi_PaintManagerUI_GetNativeWindowCount(Self);
 end;
 
-function CPaintManagerUI.AddPaintChildWnd(hChildWnd: HWND): Boolean;
+function CPaintManagerUI.AddNativeWindow(pControl: CControlUI; hChildWnd: HWND): Boolean;
 begin
-  Result := Delphi_PaintManagerUI_AddPaintChildWnd(Self, hChildWnd);
+  Result := Delphi_PaintManagerUI_AddNativeWindow(Self, pControl, hChildWnd);
 end;
 
-function CPaintManagerUI.RemovePaintChildWnd(hChildWnd: HWND): Boolean;
+function CPaintManagerUI.RemoveNativeWindow(hChildWnd: HWND): Boolean;
 begin
-  Result := Delphi_PaintManagerUI_RemovePaintChildWnd(Self, hChildWnd);
+  Result := Delphi_PaintManagerUI_RemoveNativeWindow(Self, hChildWnd);
 end;
 
 procedure CPaintManagerUI.AddDelayedCleanup(pControl: CControlUI);
@@ -7453,6 +7404,16 @@ begin
   Result := Delphi_DateTimeUI_GetInterface(Self, PChar(pstrName));
 end;
 
+function CDateTimeUI.GetControlFlags: UINT;
+begin
+  Result := Delphi_DateTimeUI_GetControlFlags(Self);
+end;
+
+function CDateTimeUI.GetNativeWindow: HWND;
+begin
+  Result := Delphi_DateTimeUI_GetNativeWindow(Self);
+end;
+
 function CDateTimeUI.GetTime: TDateTime;
 var
   LSysDateTime: TSystemTime;
@@ -7519,6 +7480,11 @@ end;
 function CEditUI.GetControlFlags: UINT;
 begin
   Result := Delphi_EditUI_GetControlFlags(Self);
+end;
+
+function CEditUI.GetNativeWindow: HWND;
+begin
+  Result := Delphi_EditUI_GetNativeWindow(Self);
 end;
 
 procedure CEditUI.SetEnabled(bEnable: Boolean);
@@ -7866,9 +7832,9 @@ begin
   Result := Delphi_ScrollBarUI_GetScrollPos(Self);
 end;
 
-procedure CScrollBarUI.SetScrollPos(nPos: Integer);
+procedure CScrollBarUI.SetScrollPos(nPos: Integer; bTriggerEvent: Boolean);
 begin
-  Delphi_ScrollBarUI_SetScrollPos(Self, nPos);
+  Delphi_ScrollBarUI_SetScrollPos(Self, nPos, bTriggerEvent);
 end;
 
 function CScrollBarUI.GetLineSize: Integer;
@@ -8937,14 +8903,14 @@ begin
   Delphi_RenderEngine_DrawLine(hDC, rc, nSize, dwPenColor, nStyle);
 end;
 
-class procedure CRenderEngine.DrawRect(hDC: HDC; var rc: TRect; nSize: Integer; dwPenColor: DWORD);
+class procedure CRenderEngine.DrawRect(hDC: HDC; var rc: TRect; nSize: Integer; dwPenColor: DWORD; nStyle: Integer);
 begin
-  Delphi_RenderEngine_DrawRect(hDC, rc, nSize, dwPenColor);
+  Delphi_RenderEngine_DrawRect(hDC, rc, nSize, dwPenColor, nStyle);
 end;
 
-class procedure CRenderEngine.DrawRoundRect(hDC: HDC; var rc: TRect; width: Integer; height: Integer; nSize: Integer; dwPenColor: DWORD);
+class procedure CRenderEngine.DrawRoundRect(hDC: HDC; var rc: TRect; width: Integer; height: Integer; nSize: Integer; dwPenColor: DWORD; nStyle: Integer);
 begin
-  Delphi_RenderEngine_DrawRoundRect(hDC, rc, width, height, nSize, dwPenColor);
+  Delphi_RenderEngine_DrawRoundRect(hDC, rc, width, height, nSize, dwPenColor, nStyle);
 end;
 
 class procedure CRenderEngine.DrawText(hDC: HDC; pManager: CPaintManagerUI; var rc: TRect; pstrText: string; dwTextColor: DWORD; iFont: Integer; uStyle: UINT);
@@ -9399,6 +9365,11 @@ begin
   Delphi_NativeControlUI_SetInternVisible(Self, bVisible);
 end;
 
+procedure CNativeControlUI.SetVisible(bVisible: Boolean);
+begin
+  Delphi_NativeControlUI_SetVisible(Self, bVisible);
+end;
+
 procedure CNativeControlUI.SetPos(rc: TRect; bNeedInvalidate: Boolean);
 begin
   Delphi_NativeControlUI_SetPos(Self, rc, bNeedInvalidate);
@@ -9533,6 +9504,7 @@ procedure Delphi_ControlUI_SetName; external DuiLibdll name 'Delphi_ControlUI_Se
 function Delphi_ControlUI_GetClass; external DuiLibdll name 'Delphi_ControlUI_GetClass';
 function Delphi_ControlUI_GetInterface; external DuiLibdll name 'Delphi_ControlUI_GetInterface';
 function Delphi_ControlUI_GetControlFlags; external DuiLibdll name 'Delphi_ControlUI_GetControlFlags';
+function Delphi_ControlUI_GetNativeWindow; external DuiLibdll name 'Delphi_ControlUI_GetNativeWindow';
 function Delphi_ControlUI_Activate; external DuiLibdll name 'Delphi_ControlUI_Activate';
 function Delphi_ControlUI_GetManager; external DuiLibdll name 'Delphi_ControlUI_GetManager';
 procedure Delphi_ControlUI_SetManager; external DuiLibdll name 'Delphi_ControlUI_SetManager';
@@ -9554,19 +9526,11 @@ procedure Delphi_ControlUI_SetColorHSL; external DuiLibdll name 'Delphi_ControlU
 procedure Delphi_ControlUI_GetBorderRound; external DuiLibdll name 'Delphi_ControlUI_GetBorderRound';
 procedure Delphi_ControlUI_SetBorderRound; external DuiLibdll name 'Delphi_ControlUI_SetBorderRound';
 function Delphi_ControlUI_DrawImage; external DuiLibdll name 'Delphi_ControlUI_DrawImage';
-function Delphi_ControlUI_GetBorderSize; external DuiLibdll name 'Delphi_ControlUI_GetBorderSize';
-procedure Delphi_ControlUI_SetBorderSize_01; external DuiLibdll name 'Delphi_ControlUI_SetBorderSize_01';
 function Delphi_ControlUI_GetBorderColor; external DuiLibdll name 'Delphi_ControlUI_GetBorderColor';
 procedure Delphi_ControlUI_SetBorderColor; external DuiLibdll name 'Delphi_ControlUI_SetBorderColor';
+procedure Delphi_ControlUI_GetBorderSize; external DuiLibdll name 'Delphi_ControlUI_GetBorderSize';
+procedure Delphi_ControlUI_SetBorderSize_01; external DuiLibdll name 'Delphi_ControlUI_SetBorderSize_01';
 procedure Delphi_ControlUI_SetBorderSize_02; external DuiLibdll name 'Delphi_ControlUI_SetBorderSize_02';
-function Delphi_ControlUI_GetLeftBorderSize; external DuiLibdll name 'Delphi_ControlUI_GetLeftBorderSize';
-procedure Delphi_ControlUI_SetLeftBorderSize; external DuiLibdll name 'Delphi_ControlUI_SetLeftBorderSize';
-function Delphi_ControlUI_GetTopBorderSize; external DuiLibdll name 'Delphi_ControlUI_GetTopBorderSize';
-procedure Delphi_ControlUI_SetTopBorderSize; external DuiLibdll name 'Delphi_ControlUI_SetTopBorderSize';
-function Delphi_ControlUI_GetRightBorderSize; external DuiLibdll name 'Delphi_ControlUI_GetRightBorderSize';
-procedure Delphi_ControlUI_SetRightBorderSize; external DuiLibdll name 'Delphi_ControlUI_SetRightBorderSize';
-function Delphi_ControlUI_GetBottomBorderSize; external DuiLibdll name 'Delphi_ControlUI_GetBottomBorderSize';
-procedure Delphi_ControlUI_SetBottomBorderSize; external DuiLibdll name 'Delphi_ControlUI_SetBottomBorderSize';
 function Delphi_ControlUI_GetBorderStyle; external DuiLibdll name 'Delphi_ControlUI_GetBorderStyle';
 procedure Delphi_ControlUI_SetBorderStyle; external DuiLibdll name 'Delphi_ControlUI_SetBorderStyle';
 function Delphi_ControlUI_GetPos; external DuiLibdll name 'Delphi_ControlUI_GetPos';
@@ -9814,9 +9778,9 @@ function Delphi_PaintManagerUI_GetPostPaintCount; external DuiLibdll name 'Delph
 function Delphi_PaintManagerUI_AddPostPaint; external DuiLibdll name 'Delphi_PaintManagerUI_AddPostPaint';
 function Delphi_PaintManagerUI_RemovePostPaint; external DuiLibdll name 'Delphi_PaintManagerUI_RemovePostPaint';
 function Delphi_PaintManagerUI_SetPostPaintIndex; external DuiLibdll name 'Delphi_PaintManagerUI_SetPostPaintIndex';
-function Delphi_PaintManagerUI_GetPaintChildWndCount; external DuiLibdll name 'Delphi_PaintManagerUI_GetPaintChildWndCount';
-function Delphi_PaintManagerUI_AddPaintChildWnd; external DuiLibdll name 'Delphi_PaintManagerUI_AddPaintChildWnd';
-function Delphi_PaintManagerUI_RemovePaintChildWnd; external DuiLibdll name 'Delphi_PaintManagerUI_RemovePaintChildWnd';
+function Delphi_PaintManagerUI_GetNativeWindowCount; external DuiLibdll name 'Delphi_PaintManagerUI_GetNativeWindowCount';
+function Delphi_PaintManagerUI_AddNativeWindow; external DuiLibdll name 'Delphi_PaintManagerUI_AddNativeWindow';
+function Delphi_PaintManagerUI_RemoveNativeWindow; external DuiLibdll name 'Delphi_PaintManagerUI_RemoveNativeWindow';
 procedure Delphi_PaintManagerUI_AddDelayedCleanup; external DuiLibdll name 'Delphi_PaintManagerUI_AddDelayedCleanup';
 function Delphi_PaintManagerUI_AddTranslateAccelerator; external DuiLibdll name 'Delphi_PaintManagerUI_AddTranslateAccelerator';
 function Delphi_PaintManagerUI_RemoveTranslateAccelerator; external DuiLibdll name 'Delphi_PaintManagerUI_RemoveTranslateAccelerator';
@@ -10275,6 +10239,8 @@ function Delphi_DateTimeUI_CppCreate; external DuiLibdll name 'Delphi_DateTimeUI
 procedure Delphi_DateTimeUI_CppDestroy; external DuiLibdll name 'Delphi_DateTimeUI_CppDestroy';
 function Delphi_DateTimeUI_GetClass; external DuiLibdll name 'Delphi_DateTimeUI_GetClass';
 function Delphi_DateTimeUI_GetInterface; external DuiLibdll name 'Delphi_DateTimeUI_GetInterface';
+function Delphi_DateTimeUI_GetControlFlags; external DuiLibdll name 'Delphi_DateTimeUI_GetControlFlags';
+function Delphi_DateTimeUI_GetNativeWindow; external DuiLibdll name 'Delphi_DateTimeUI_GetNativeWindow';
 function Delphi_DateTimeUI_GetTime; external DuiLibdll name 'Delphi_DateTimeUI_GetTime';
 procedure Delphi_DateTimeUI_SetTime; external DuiLibdll name 'Delphi_DateTimeUI_SetTime';
 procedure Delphi_DateTimeUI_SetReadOnly; external DuiLibdll name 'Delphi_DateTimeUI_SetReadOnly';
@@ -10289,6 +10255,7 @@ procedure Delphi_EditUI_CppDestroy; external DuiLibdll name 'Delphi_EditUI_CppDe
 function Delphi_EditUI_GetClass; external DuiLibdll name 'Delphi_EditUI_GetClass';
 function Delphi_EditUI_GetInterface; external DuiLibdll name 'Delphi_EditUI_GetInterface';
 function Delphi_EditUI_GetControlFlags; external DuiLibdll name 'Delphi_EditUI_GetControlFlags';
+function Delphi_EditUI_GetNativeWindow; external DuiLibdll name 'Delphi_EditUI_GetNativeWindow';
 procedure Delphi_EditUI_SetEnabled; external DuiLibdll name 'Delphi_EditUI_SetEnabled';
 procedure Delphi_EditUI_SetText; external DuiLibdll name 'Delphi_EditUI_SetText';
 procedure Delphi_EditUI_SetMaxChar; external DuiLibdll name 'Delphi_EditUI_SetMaxChar';
@@ -10703,6 +10670,7 @@ procedure Delphi_TileLayoutUI_SetAttribute; external DuiLibdll name 'Delphi_Tile
 function Delphi_NativeControlUI_CppCreate; external DuiLibdll name 'Delphi_NativeControlUI_CppCreate';
 procedure Delphi_NativeControlUI_CppDestroy; external DuiLibdll name 'Delphi_NativeControlUI_CppDestroy';
 procedure Delphi_NativeControlUI_SetInternVisible; external DuiLibdll name 'Delphi_NativeControlUI_SetInternVisible';
+procedure Delphi_NativeControlUI_SetVisible; external DuiLibdll name 'Delphi_NativeControlUI_SetVisible';
 procedure Delphi_NativeControlUI_SetPos; external DuiLibdll name 'Delphi_NativeControlUI_SetPos';
 function Delphi_NativeControlUI_GetClass; external DuiLibdll name 'Delphi_NativeControlUI_GetClass';
 function Delphi_NativeControlUI_GetText; external DuiLibdll name 'Delphi_NativeControlUI_GetText';
