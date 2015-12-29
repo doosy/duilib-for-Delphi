@@ -35,8 +35,10 @@ type
     procedure _SetAutoURLDetect(const Value: Boolean);
     procedure _SetEventMask(const Value: DWORD);
   public
-    class function CppCreate: CRichEditUI;
-    procedure CppDestroy;
+    class function CppCreate: CRichEditUI; deprecated {$IFNDEF UseLowVer}'use Create'{$ENDIF};
+    procedure CppDestroy; deprecated {$IFNDEF UseLowVer}'use Free'{$ENDIF};
+    class function Create: CRichEditUI;
+    procedure Free;
     function GetClass: string;
     function GetInterface(pstrName: string): Pointer;
     function GetControlFlags: UINT;
@@ -73,7 +75,7 @@ type
     function SetSel(const cr: CHARRANGE): Integer; overload;
     function SetSel(nStartChar: LongInt; nEndChar: LongInt): Integer; overload;
     procedure ReplaceSel(lpszNewText: string; bCanUndo: Boolean);
-    procedure ReplaceSelW(lpszNewText: string; bCanUndo: Boolean = False);
+    procedure ReplaceSelW(lpszNewText: WideString; bCanUndo: Boolean = False);
     function GetSelText: string;
     function SetSelAll: Integer;
     function SetSelNone: Integer;
@@ -288,6 +290,16 @@ begin
   Delphi_RichEditUI_CppDestroy(Self);
 end;
 
+class function CRichEditUI.Create: CRichEditUI;
+begin
+  Result := Delphi_RichEditUI_CppCreate;
+end;
+
+procedure CRichEditUI.Free;
+begin
+  Delphi_RichEditUI_CppDestroy(Self);
+end;
+
 function CRichEditUI.GetClass: string;
 begin
   Result := Delphi_RichEditUI_GetClass(Self);
@@ -472,7 +484,7 @@ begin
   Delphi_RichEditUI_ReplaceSel(Self, PChar(lpszNewText), bCanUndo);
 end;
 
-procedure CRichEditUI.ReplaceSelW(lpszNewText: string; bCanUndo: Boolean);
+procedure CRichEditUI.ReplaceSelW(lpszNewText: WideString; bCanUndo: Boolean);
 begin
   Delphi_RichEditUI_ReplaceSelW(Self, PWideChar(lpszNewText), bCanUndo);
 end;

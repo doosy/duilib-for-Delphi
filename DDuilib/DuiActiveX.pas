@@ -28,16 +28,19 @@ type
     function GetClisd: TCLSID;
     function GetModuleName: string;
     procedure SetModuleName(pstrText: string);
-    function GetHostWindow: HWND;
     function IsDelayCreate: Boolean;
     procedure SetDelayCreate(bDelayCreate: Boolean = True);
     procedure SetVisible(bVisible: Boolean = True);
     procedure SetInternVisible(bVisible: Boolean = True);
   public
-    class function CppCreate: CActiveXUI;
-    procedure CppDestroy;
+    class function CppCreate: CActiveXUI; deprecated {$IFNDEF UseLowVer}'use Create'{$ENDIF};
+    procedure CppDestroy; deprecated {$IFNDEF UseLowVer}'use Free'{$ENDIF};
+    class function Create: CActiveXUI;
+    procedure Free;
     function GetClass: string;
     function GetInterface(pstrName: string): Pointer;
+    function GetControlFlags: UINT;
+    function GetNativeWindow: HWND;
     function CreateControl(const clsid: TCLSID): Boolean; overload;
     function CreateControl(pstrCLSID: string): Boolean; overload;
     function GetControl(const iid: TIID; {ppRet: PPointer}out ppRet): HRESULT;
@@ -48,7 +51,6 @@ type
   public
     property Clisd: TCLSID read GetClisd;
     property DelayCreate: Boolean read IsDelayCreate write SetDelayCreate;
-    property HostWindow: HWND read GetHostWindow;
     property ModuleName: string read GetModuleName write SetModuleName;
     property Visible: Boolean read IsVisible write SetVisible;
     property InternVisible: Boolean write SetInternVisible;
@@ -62,7 +64,8 @@ function Delphi_ActiveXUI_CppCreate: CActiveXUI; cdecl;
 procedure Delphi_ActiveXUI_CppDestroy(Handle: CActiveXUI); cdecl;
 function Delphi_ActiveXUI_GetClass(Handle: CActiveXUI): LPCTSTR; cdecl;
 function Delphi_ActiveXUI_GetInterface(Handle: CActiveXUI; pstrName: LPCTSTR): Pointer; cdecl;
-function Delphi_ActiveXUI_GetHostWindow(Handle: CActiveXUI): HWND; cdecl;
+function Delphi_ActiveXUI_GetControlFlags(Handle: CActiveXUI): UINT; cdecl;
+function Delphi_ActiveXUI_GetNativeWindow(Handle: CActiveXUI): HWND; cdecl;
 function Delphi_ActiveXUI_IsDelayCreate(Handle: CActiveXUI): Boolean; cdecl;
 procedure Delphi_ActiveXUI_SetDelayCreate(Handle: CActiveXUI; bDelayCreate: Boolean); cdecl;
 function Delphi_ActiveXUI_CreateControl_01(Handle: CActiveXUI; clsid: TCLSID): Boolean; cdecl;
@@ -93,6 +96,16 @@ begin
   Delphi_ActiveXUI_CppDestroy(Self);
 end;
 
+class function CActiveXUI.Create: CActiveXUI;
+begin
+  Result := Delphi_ActiveXUI_CppCreate;
+end;
+
+procedure CActiveXUI.Free;
+begin
+  Delphi_ActiveXUI_CppDestroy(Self);
+end;
+
 function CActiveXUI.GetClass: string;
 begin
   Result := Delphi_ActiveXUI_GetClass(Self);
@@ -103,9 +116,14 @@ begin
   Result := Delphi_ActiveXUI_GetInterface(Self, PChar(pstrName));
 end;
 
-function CActiveXUI.GetHostWindow: HWND;
+function CActiveXUI.GetControlFlags: UINT;
 begin
-  Result := Delphi_ActiveXUI_GetHostWindow(Self);
+  Result := Delphi_ActiveXUI_GetControlFlags(Self);
+end;
+
+function CActiveXUI.GetNativeWindow: HWND;
+begin
+  Result := Delphi_ActiveXUI_GetNativeWindow(Self);
 end;
 
 function CActiveXUI.IsDelayCreate: Boolean;
@@ -191,7 +209,8 @@ function Delphi_ActiveXUI_CppCreate; external DuiLibdll name 'Delphi_ActiveXUI_C
 procedure Delphi_ActiveXUI_CppDestroy; external DuiLibdll name 'Delphi_ActiveXUI_CppDestroy';
 function Delphi_ActiveXUI_GetClass; external DuiLibdll name 'Delphi_ActiveXUI_GetClass';
 function Delphi_ActiveXUI_GetInterface; external DuiLibdll name 'Delphi_ActiveXUI_GetInterface';
-function Delphi_ActiveXUI_GetHostWindow; external DuiLibdll name 'Delphi_ActiveXUI_GetHostWindow';
+function Delphi_ActiveXUI_GetControlFlags; external DuiLibdll name 'Delphi_ActiveXUI_GetControlFlags';
+function Delphi_ActiveXUI_GetNativeWindow; external DuiLibdll name 'Delphi_ActiveXUI_GetNativeWindow';
 function Delphi_ActiveXUI_IsDelayCreate; external DuiLibdll name 'Delphi_ActiveXUI_IsDelayCreate';
 procedure Delphi_ActiveXUI_SetDelayCreate; external DuiLibdll name 'Delphi_ActiveXUI_SetDelayCreate';
 function Delphi_ActiveXUI_CreateControl_01; external DuiLibdll name 'Delphi_ActiveXUI_CreateControl_01';
